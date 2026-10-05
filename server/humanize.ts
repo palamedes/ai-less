@@ -1,8 +1,9 @@
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { analyze, type Analysis } from "./analyze.ts";
-import { assertNotRefused, claude, fallback, PipelineError } from "./claude.ts";
+import type { Usage } from "./backends/types.ts";
+import { PipelineError } from "./claude.ts";
 import { config } from "./config.ts";
+import { llm } from "./llm.ts";
 import {
   FIDELITY_SYSTEM,
   fidelityPrompt,
@@ -30,12 +31,6 @@ const FidelitySchema = z.object({
   ),
 });
 export type Fidelity = z.infer<typeof FidelitySchema>;
-
-export interface Usage {
-  input: number;
-  output: number;
-  cacheRead: number;
-}
 
 export type HumanizeEvent =
   | { type: "stage"; stage: "analyzing" | "rewriting" | "scoring" | "checking"; pass?: number; message: string }
@@ -115,10 +110,10 @@ export async function humanize(
   signal?: AbortSignal,
 ) {
   const usage: Usage = { input: 0, output: 0, cacheRead: 0 };
-  const addUsage = (u: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null }) => {
-    usage.input += u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
-    usage.output += u.output_tokens;
-    usage.cacheRead += u.cache_read_input_tokens ?? 0;
+  const addUsage = (u: Usage) => {
+    usage.input += u.input;
+    usage.output += u.output;
+    usage.cacheRead += u.cacheRead;
   };
 
   await emit({ type: "stage", stage: "analyzing", message: "Scoring the original" });
@@ -139,27 +134,22 @@ export async function humanize(
 
     const prompt = pass === 1 ? firstPassPrompt(original, before, opts) : revisionPrompt(original, draft, latest, pass, opts);
     const extractor = new RewriteExtractor();
-    const stream = claude().beta.messages.stream(
-      {
-        ...fallback(),
-        model: config.rewriteModel,
-        max_tokens: 64000,
-        output_config: { effort: config.rewriteEffort },
-        system: [{ type: "text", text: REWRITE_SYSTEM, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: prompt }],
-      },
-      { signal },
-    );
     const pending: Promise<void>[] = [];
-    stream.on("text", (delta) => {
-      const out = extractor.push(delta);
-      if (out) pending.push(Promise.resolve(emit({ type: "delta", pass, text: out })));
+    const response = await llm().stream({
+      system: REWRITE_SYSTEM,
+      prompt,
+      model: config.rewriteModel,
+      effort: config.rewriteEffort,
+      signal,
+      onText: (delta) => {
+        const out = extractor.push(delta);
+        if (out) pending.push(Promise.resolve(emit({ type: "delta", pass, text: out })));
+      },
     });
-    const message = await stream.finalMessage();
     await Promise.all(pending);
-    addUsage(message.usage);
-    assertNotRefused(message);
-    if (message.stop_reason === "max_tokens") throw new PipelineError("The rewrite hit the output limit before finishing.");
+    addUsage(response.usage);
+    // The streamed text is authoritative; fall back to the final text if nothing streamed.
+    if (!extractor.raw) extractor.push(response.text);
 
     draft = extractor.result();
     if (!draft) throw new PipelineError("Claude returned an empty rewrite.");
@@ -198,18 +188,13 @@ export async function humanize(
 }
 
 async function checkFidelity(original: string, rewrite: string, signal?: AbortSignal) {
-  const message = await claude().beta.messages.parse(
-    {
-      ...fallback(),
-      model: config.judgeModel,
-      max_tokens: 16000,
-      output_config: { effort: "medium", format: betaZodOutputFormat(FidelitySchema) },
-      system: FIDELITY_SYSTEM,
-      messages: [{ role: "user", content: fidelityPrompt(original, rewrite) }],
-    },
-    { signal },
-  );
-  assertNotRefused(message);
-  if (!message.parsed_output) throw new PipelineError("Meaning check returned an unparseable result");
-  return { fidelity: message.parsed_output, usage: message.usage };
+  const { data, usage } = await llm().json({
+    system: FIDELITY_SYSTEM,
+    prompt: fidelityPrompt(original, rewrite),
+    model: config.judgeModel,
+    effort: "medium",
+    schema: FidelitySchema,
+    signal,
+  });
+  return { fidelity: data, usage };
 }

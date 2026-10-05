@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
 const env = process.env;
 const effort = (value: string | undefined, fallback: Effort): Effort =>
@@ -12,6 +12,12 @@ const effort = (value: string | undefined, fallback: Effort): Effort =>
 export const config = {
   port: Number(env.PORT ?? 5177),
   host: env.HOST ?? "127.0.0.1",
+
+  // Where Claude calls go. "claude-code" runs them through the local Claude Code CLI, so they
+  // count against your Claude plan; "api" uses the Anthropic API and its prepaid credits.
+  // "auto" picks claude-code whenever the `claude` command is installed.
+  backend: (["claude-code", "api"] as const).find((b) => b === env.AI_LESS_BACKEND) ?? "auto",
+  claudeBin: env.AI_LESS_CLAUDE_BIN ?? "claude",
 
   // Claude does the rewriting, the meaning check, and (optionally) a second-opinion read.
   rewriteModel: env.AI_LESS_REWRITE_MODEL ?? "claude-opus-5-5",

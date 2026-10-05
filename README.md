@@ -7,7 +7,6 @@ It runs locally: a small Node server plus a single-page UI in your browser.
 ## Quick start
 
 ```sh
-ant auth login            # once; or put ANTHROPIC_API_KEY in .env (see .env.example)
 ./ai-less                 # serves http://127.0.0.1:5177 and opens it in your browser
 ```
 
@@ -21,7 +20,12 @@ The first run installs the npm dependencies, and the launcher reinstalls them wh
 
 Requires Node 23.6 or newer, which runs the TypeScript directly with no build step. For development, `npm run dev` restarts the server on file changes without opening a browser.
 
-Scoring works without Claude. Rewriting needs it.
+Scoring works without Claude. Rewriting needs it, and there are two ways to reach it:
+
+- **Claude Code (default when the `claude` command is installed).** The calls run through your local Claude Code login, so they count against your Claude plan (Pro/Max) and need no API credits. Each call is isolated: ai-less's own system prompt, no tools, no MCP servers, none of your hooks, plugins or CLAUDE.md, and nothing saved to your session history. API-key environment variables are stripped so it can't fall back to billing the API.
+- **Anthropic API.** Set `AI_LESS_BACKEND=api` and run `ant auth login` (or set `ANTHROPIC_API_KEY`). This is billed to the API account's prepaid credits, which are separate from a Claude plan.
+
+The status pill at the top of the page shows which route is in use.
 
 ## How scoring works
 
@@ -83,7 +87,11 @@ server/
   analyze.ts            runs detectors in parallel, combines scores
   humanize.ts           rewrite → score → revise loop, meaning check
   prompts.ts            the editing guide and per-pass prompts
-  claude.ts             Anthropic client, credential probe, refusal fallback
+  llm.ts                picks the Claude backend, connection status
+  backends/
+    claude-code.ts      Claude Code CLI in print mode (your plan)
+    api.ts              Anthropic API via the SDK (API credits)
+  claude.ts             Anthropic client, error messages, refusal fallback
   text.ts               sentence segmentation with offsets, chunking for classifiers
   detectors/
     heuristics.ts       style tells

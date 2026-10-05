@@ -6,11 +6,12 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import { claudeStatus, describeClaudeError, PipelineError, probeClaude } from "./claude.ts";
+import { describeClaudeError, PipelineError } from "./claude.ts";
 import { config, ROOT } from "./config.ts";
 import { externalDetectors } from "./detectors/external.ts";
 import { classifiers, warmUp } from "./detectors/local-models.ts";
 import { cachedAnalyze, humanize } from "./humanize.ts";
+import { llmStatus, probeLlm } from "./llm.ts";
 
 const USAGE = `Usage: ai-less [--port N] [--host ADDR] [--no-browser]
 
@@ -74,17 +75,17 @@ const app = new Hono();
 
 let lastProbe = 0;
 async function ensureClaude() {
-  if (!claudeStatus.ok && Date.now() - lastProbe > 5_000) {
+  if (!llmStatus.ok && Date.now() - lastProbe > 5_000) {
     lastProbe = Date.now();
-    await probeClaude();
+    await probeLlm();
   }
-  return claudeStatus;
+  return llmStatus;
 }
 
 app.get("/api/status", async (c) => {
   await ensureClaude();
   return c.json({
-    claude: claudeStatus,
+    claude: llmStatus,
     local: classifiers.map((m) => ({ id: m.spec.id, name: m.spec.name, status: m.status, error: m.error })),
     external: externalDetectors.map((d) => ({ id: d.id, name: d.name, configured: d.enabled() })),
   });
@@ -95,7 +96,7 @@ app.post("/api/analyze", async (c) => {
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Bad request" }, 400);
   await ensureClaude();
   const { text, judge } = parsed.data;
-  return c.json(await cachedAnalyze(text, "full", judge && claudeStatus.ok, c.req.raw.signal));
+  return c.json(await cachedAnalyze(text, "full", judge && llmStatus.ok, c.req.raw.signal));
 });
 
 app.post("/api/humanize", async (c) => {
@@ -114,7 +115,7 @@ app.post("/api/humanize", async (c) => {
       if (controller.signal.aborted) return;
       console.error("[humanize]", err);
       let message = describeClaudeError(err);
-      if (!(err instanceof PipelineError) && !(await probeClaude()).ok) message = claudeStatus.error!;
+      if (!(err instanceof PipelineError) && !(await probeLlm()).ok) message = llmStatus.error!;
       await stream.writeSSE({ event: "error", data: JSON.stringify({ type: "error", message }) });
     }
   });
@@ -155,7 +156,9 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: config.hos
   console.log(`ai-less is running at ${url}\nPress Ctrl+C to stop.`);
   if (!cli["no-browser"]) openBrowser(url);
   warmUp();
-  probeClaude().then((s) => console.log(s.ok ? `[claude] connected (${s.model})` : `[claude] not connected: ${s.error}`));
+  probeLlm().then((s) =>
+    console.log(s.ok ? `[claude] ${s.label} via ${s.backend}, ${s.model}` : `[claude] not connected (${s.backend}): ${s.error}`),
+  );
 });
 server.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code !== "EADDRINUSE") throw err;

@@ -135,10 +135,11 @@ function renderStatus() {
     return;
   }
   const pills = [];
+  const via = s.claude.backend === "claude-code" ? "Claude Code, on your Claude plan" : "the Anthropic API, billed to API credits";
   pills.push(
     s.claude.ok
-      ? `<span class="pill ok" title="Rewrites with ${esc(s.claude.model)}">Claude</span>`
-      : `<span class="pill ${s.claude.checked ? "bad" : "wait"}" title="${esc(s.claude.error ?? "Checking…")}">Claude ${s.claude.checked ? "offline" : "…"}</span>`,
+      ? `<span class="pill ok" title="Rewrites with ${esc(s.claude.model)} via ${via}">${esc(s.claude.label)}</span>`
+      : `<span class="pill ${s.claude.checked ? "bad" : "wait"}" title="${esc(s.claude.error ?? "Checking…")}">${esc(s.claude.label)} ${s.claude.checked ? "offline" : "…"}</span>`,
   );
   for (const m of s.local) {
     const cls = { ready: "ok", loading: "wait", idle: "wait", error: "bad" }[m.status];

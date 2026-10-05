@@ -2,10 +2,9 @@
 // carries a low weight, but they're good at pointing to the specific sentences
 // that sound canned and saying why.
 
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { assertNotRefused, claude, claudeStatus, fallback } from "../claude.ts";
 import { config } from "../config.ts";
+import { llm, llmStatus } from "../llm.ts";
 import { clamp01, type Detection, type Detector } from "./types.ts";
 
 const Judgement = z.object({
@@ -33,29 +32,17 @@ export const claudeJudge: Detector = {
   kind: "llm",
   weight: 1,
   fast: false,
-  enabled: () => claudeStatus.ok,
+  enabled: () => llmStatus.ok,
   async detect(_text, sentences, signal): Promise<Detection> {
     const numbered = sentences.map((s) => `[${s.index}] ${s.text}`).join("\n");
-    const message = await claude().beta.messages.parse(
-      {
-        ...fallback(),
-        model: config.judgeModel,
-        max_tokens: 16000,
-        output_config: { effort: config.judgeEffort, format: betaZodOutputFormat(Judgement) },
-        system: SYSTEM,
-        messages: [
-          {
-            role: "user",
-            content: `Here is the article, one sentence per line with its number:\n\n<article>\n${numbered}\n</article>\n\nHow likely is it that this was AI-generated, and which sentences give it away?`,
-          },
-        ],
-      },
-      { signal },
-    );
-    assertNotRefused(message);
-    const out = message.parsed_output;
-    if (!out) throw new Error("Claude returned an unparseable judgement");
-
+    const { data: out } = await llm().json({
+      system: SYSTEM,
+      prompt: `Here is the article, one sentence per line with its number:\n\n<article>\n${numbered}\n</article>\n\nHow likely is it that this was AI-generated, and which sentences give it away?`,
+      model: config.judgeModel,
+      effort: config.judgeEffort,
+      schema: Judgement,
+      signal,
+    });
     const score = clamp01(out.ai_likelihood / 100);
     const flagged = new Map(out.flagged.map((f) => [f.sentence, f.reason]));
     const sentenceScores: Record<number, number> = {};
