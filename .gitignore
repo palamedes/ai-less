@@ -3,3 +3,6 @@ node_modules/
 .env
 *.log
 .DS_Store
+
+# Your own articles and rewrites for testing
+samples/
