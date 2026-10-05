@@ -18,6 +18,7 @@ const els = {
   analyzeBtn: $("#analyzeBtn"),
   humanizeBtn: $("#humanizeBtn"),
   report: $("#report"),
+  tip: $("#tip"),
   toast: $("#toast"),
 };
 
@@ -228,32 +229,21 @@ function signalCards(analysis) {
 }
 
 function heat(score) {
-  return Math.max(0, (score - 0.3) / 0.7) * 0.42;
+  return Math.max(0, (score - 0.3) / 0.7) * 0.5;
 }
 
 const flagged = (s) => s.score !== null && (s.score >= 0.5 || (s.notes.length > 0 && s.score >= 0.35));
 
-// The article with each sentence shaded by its AI score. Flagged sentences get a
-// number, and each paragraph is followed by its notes: the score and the reasons.
+// The article with each sentence shaded by its AI score. Flagged sentences get a small
+// number; hovering it shows the score and the reasons and lights up the sentence.
 function heatmap(text, sentences) {
   const root = document.createElement("div");
   root.className = "article heatmap";
   let pos = 0;
   let n = 0;
-  let pending = []; // notes for the paragraph in progress
-  let afterNotes = false;
-
-  const gap = (to) => {
-    let chunk = text.slice(pos, to);
-    // A notes block already ends the line, so drop one newline to keep paragraph spacing even.
-    if (afterNotes) chunk = chunk.replace(/^\n/, "");
-    afterNotes = false;
-    if (chunk) root.append(chunk);
-  };
-
-  sentences.forEach((s, i) => {
-    if (s.start < pos) return;
-    gap(s.start);
+  for (const s of sentences) {
+    if (s.start < pos) continue;
+    if (s.start > pos) root.append(text.slice(pos, s.start));
     const span = document.createElement("span");
     span.className = "sent";
     span.textContent = text.slice(s.start, s.end);
@@ -265,38 +255,44 @@ function heatmap(text, sentences) {
     if (flagged(s)) {
       n++;
       span.dataset.i = String(n);
-      root.append(Object.assign(document.createElement("sup"), { className: "mk", textContent: String(n) }));
-      pending.push({ n, s });
+      const mark = Object.assign(document.createElement("sup"), { className: "mk", textContent: String(n) });
+      mark.dataset.i = String(n);
+      mark.dataset.score = String(s.score);
+      mark.dataset.notes = JSON.stringify(s.notes);
+      root.append(mark);
     }
     pos = s.end;
-
-    const next = sentences[i + 1];
-    if (pending.length && (!next || next.paragraph !== s.paragraph)) {
-      const box = document.createElement("div");
-      box.className = "hm-notes";
-      box.innerHTML = pending
-        .map(({ n, s }) => {
-          const v = s.score * 100;
-          const why = s.notes.length ? s.notes.map(esc).join(" · ") : "classifier only, no specific tell";
-          return `<div class="hm-note" data-i="${n}"><span class="n">${n}</span><span class="p" style="--c:${scoreColor(v)}">${pct(v)}</span><span class="why">${why}</span></div>`;
-        })
-        .join("");
-      root.append(box);
-      pending = [];
-      afterNotes = true;
-    }
-  });
-  gap(text.length);
-
-  // Hovering a note lights up its sentence, and the other way round.
-  const link = (e, on) => {
-    const i = e.target.closest?.("[data-i]")?.dataset.i;
-    if (i) for (const el of root.querySelectorAll(`[data-i="${i}"]`)) el.classList.toggle("focus", on);
-  };
-  root.addEventListener("mouseover", (e) => link(e, true));
-  root.addEventListener("mouseout", (e) => link(e, false));
+  }
+  root.append(text.slice(pos));
   return root;
 }
+
+// ---------- tooltip for heatmap markers ----------
+
+function showTip(mark, on) {
+  for (const el of document.querySelectorAll(`.heatmap [data-i="${mark.dataset.i}"]`)) el.classList.toggle("focus", on);
+  if (!on) {
+    els.tip.hidden = true;
+    return;
+  }
+  const v = Number(mark.dataset.score) * 100;
+  const notes = JSON.parse(mark.dataset.notes || "[]");
+  els.tip.innerHTML = `<strong>${pct(v)} AI-like</strong><ul>${(notes.length ? notes : ["classifier only, no specific tell"]).map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`;
+  els.tip.hidden = false;
+  const r = mark.getBoundingClientRect();
+  const t = els.tip.getBoundingClientRect();
+  els.tip.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 - t.width / 2, window.innerWidth - t.width - 8))}px`;
+  els.tip.style.top = `${r.top - t.height - 8 < 8 ? r.bottom + 8 : r.top - t.height - 8}px`;
+}
+document.addEventListener("mouseover", (e) => {
+  const mark = e.target.closest?.("sup.mk");
+  if (mark) showTip(mark, true);
+});
+document.addEventListener("mouseout", (e) => {
+  const mark = e.target.closest?.("sup.mk");
+  if (mark) showTip(mark, false);
+});
+document.addEventListener("scroll", () => (els.tip.hidden = true), { passive: true });
 
 function scoreCard(analysis, extra = "") {
   const ok = analysis.detectors.filter((d) => !d.error).length;
