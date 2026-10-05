@@ -543,6 +543,50 @@ function diffView(before, after) {
   return root;
 }
 
+const ICON_COPY = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`;
+const ICON_DONE = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // The async clipboard API needs a secure context; fall back for plain-http LAN access.
+    const ta = Object.assign(document.createElement("textarea"), { value: text });
+    ta.style.cssText = "position:fixed;opacity:0";
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if (!ok) toast("Couldn't copy. Select the text and press Ctrl+C.");
+    return ok;
+  }
+}
+
+// A clipboard icon that sticks to the top-right corner of a text panel while you scroll it.
+function copyButton(getText) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "copy-btn";
+  btn.title = "Copy to clipboard";
+  btn.setAttribute("aria-label", "Copy to clipboard");
+  btn.innerHTML = ICON_COPY;
+  let timer;
+  btn.addEventListener("click", async () => {
+    if (!(await copyText(getText()))) return;
+    btn.innerHTML = ICON_DONE;
+    btn.classList.add("done");
+    btn.title = "Copied";
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      btn.innerHTML = ICON_COPY;
+      btn.classList.remove("done");
+      btn.title = "Copy to clipboard";
+    }, 1600);
+  });
+  return btn;
+}
+
 function renderResult(original, r) {
   const { before, after } = r;
   const improved = r.bestPass > 0;
@@ -577,7 +621,7 @@ function renderResult(original, r) {
     text() {
       const el = document.createElement("div");
       el.className = "article";
-      el.textContent = r.text;
+      el.append(copyButton(() => r.text), r.text);
       return el;
     },
     diff: () => diffView(original, r.text),
@@ -601,8 +645,7 @@ function renderResult(original, r) {
   els.report.querySelector(".out-actions").addEventListener("click", async (e) => {
     const act = e.target.closest("button")?.dataset.act;
     if (act === "copy") {
-      await navigator.clipboard.writeText(r.text);
-      toast("Copied.");
+      if (await copyText(r.text)) toast("Copied.");
     } else if (act === "download") {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([r.text], { type: "text/markdown" }));

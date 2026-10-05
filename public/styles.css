@@ -308,6 +308,18 @@ sup.mk:hover, sup.mk.focus { background: rgb(var(--heat-rgb)); color: #fff; }
 .tab-body { margin-top: 14px !important; }
 
 .out-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.copy-btn {
+  position: sticky; top: 12px; float: right;
+  margin: -8px -10px 6px 12px;
+  width: 36px; height: 36px; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); color: var(--muted); cursor: pointer;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.copy-btn:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 30%, var(--line)); }
+.copy-btn.done { color: var(--good); border-color: var(--good); }
 .out-actions button { flex: 0 0 auto; }
 
 ins { background: var(--ins); color: var(--ins-ink); text-decoration: none; border-radius: 3px; }
