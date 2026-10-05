@@ -130,7 +130,8 @@ const CONSTRUCTIONS: { re: RegExp; note: string; weight: number }[] = [
   { re: new RegExp(`\\bwhether (?:you${A}?re|you are|it${A}?s|it is|you)\\b[^.!?]{1,100}\\bor\\b`, "i"), note: "\"whether you're X or Y\"", weight: 2 },
   { re: /,\s+(?:ensuring|highlighting|showcasing|making it|allowing|enabling|creating|fostering|underscoring|emphasizing|reflecting|providing|offering|paving|resulting in|helping|leading to|solidifying|cementing)\b[^.!?]*[.!?]?$/i, note: "trailing \"-ing\" clause", weight: 2 },
   { re: /\b(?:the|your|the real) (?:result|answer|outcome|catch|kicker|secret|truth|best part|bottom line|takeaway|twist)\?/i, note: "rhetorical \"The result?\" setup", weight: 2 },
-  { re: new RegExp(`\\bhere${A}?s (?:the thing|the kicker|the deal|the catch|the truth)\\b`, "i"), note: "\"here's the thing\"", weight: 2 },
+  { re: new RegExp(`\\bhere${A}?s (?:the thing|the kicker|the deal|the catch|the truth|where)\\b`, "i"), note: "\"here's the thing\"", weight: 2 },
+  { re: /^(?:\*\*)?(?:and |but )?(?:yes|sure|obviously|of course|granted),?\s/i, note: "preemptive concession (\"And yes, …\")", weight: 1.5 },
   { re: /^from [^,]{2,50} to [^,]{2,50},/i, note: "\"From X to Y,\" opener", weight: 2 },
   { re: /\b(?:is|are|remains|remain) key\b/i, note: "\"X is key\"", weight: 1 },
   { re: new RegExp(`\\b(?:isn${A}?t|is not|aren${A}?t|are not|wasn${A}?t)\\s+(?:just\\s+|only\\s+|really\\s+)?about\\b[^.!?]{1,80}?(?:;|,|—|–|\\.)\\s*(?:it${A}?s|it is|they${A}?re|it${A}?s really)\\s+(?:about\\b)?`, "i"), note: "\"isn't about X, it's about Y\"", weight: 2 },
@@ -151,6 +152,64 @@ const TRANSITION_OPENER =
 const TRIPLET = /\b[\w'’-]+(?:\s+[\w'’-]+){0,3},\s+[\w'’-]+(?:\s+[\w'’-]+){0,3},\s+(?:and|or)\s+[\w'’-]+/i;
 const CONCLUSION_OPENER = /^(?:in conclusion|in summary|to sum up|ultimately|overall|all in all|in the end|by (?:\w+ing)|so,? whether|as we|remember,)/i;
 const EM_DASH = /—|\s–\s|\s--\s/g;
+
+// Openers too common to count as a deliberate repeated pattern.
+const PLAIN_OPENERS = new Set(["the", "a", "an", "it", "this", "that", "and", "but", "so", "he", "she", "they"]);
+const NEGATION = new RegExp(`\\b(?:isn${A}?t|is not|aren${A}?t|are not|wasn${A}?t|was not|doesn${A}?t|don${A}?t)\\b`, "i");
+const REVERSAL_OPENER = new RegExp(`^(?:\\*\\*)?(?:this|it|that)(?:${A}s| is| was)\\b`, "i");
+const bare = (t: string) => t.replace(/^[*_"“'‘(]+/, "");
+
+// Patterns of current "punchy" LLM prose (2025-26 models writing in an opinionated voice):
+// runs of sentences with the same opener, one-line mic-drop paragraphs, bolded punchlines,
+// and "X isn't Y. This is Z." reversals. These span sentences, so they're found in a pre-pass.
+function rhetoricPass(prose: Sentence[]) {
+  const extra = new Map<number, { points: number; notes: string[] }>();
+  const add = (s: Sentence, points: number, note: string) => {
+    const e = extra.get(s.index) ?? { points: 0, notes: [] };
+    e.points += points;
+    e.notes.push(note);
+    extra.set(s.index, e);
+  };
+  const body = prose.filter((s) => s.kind === "prose");
+
+  let runs = 0;
+  for (let i = 0; i < body.length; ) {
+    const key = bare(body[i].text).split(/\s+/)[0]?.toLowerCase().replace(/[^a-z']/g, "") ?? "";
+    let j = i + 1;
+    while (j < body.length && bare(body[j].text).split(/\s+/)[0]?.toLowerCase().replace(/[^a-z']/g, "") === key) j++;
+    if (key && !PLAIN_OPENERS.has(key) && j - i >= 3) {
+      runs++;
+      const label = bare(body[i].text).split(/\s+/).slice(0, 2).join(" ").replace(/[,.;:]$/, "");
+      for (let k = i; k < j; k++) add(body[k], 1.5, `repeated opener "${label}…" (${j - i} in a row)`);
+    }
+    i = j;
+  }
+
+  const byParagraph = new Map<number, Sentence[]>();
+  for (const s of body) byParagraph.set(s.paragraph, [...(byParagraph.get(s.paragraph) ?? []), s]);
+  const paragraphs = [...byParagraph.values()];
+  const oneLiners = paragraphs.filter((p) => p.length === 1 && p[0].words <= 10);
+  for (const [p] of oneLiners) add(p, 1.5, "one-line punch paragraph");
+
+  let bold = 0;
+  for (const s of body) {
+    if (/^\*\*|\*\*[.!?"”]?$/.test(s.text) || /\*\*[^*]*\s[^*]*\s[^*]*\s[^*]+\*\*/.test(s.text)) {
+      bold++;
+      add(s, 1.5, "bolded punchline");
+    }
+  }
+
+  let reversals = 0;
+  for (let i = 1; i < body.length; i++) {
+    const prev = body[i - 1];
+    if (prev.words <= 14 && NEGATION.test(prev.text) && REVERSAL_OPENER.test(body[i].text)) {
+      reversals++;
+      add(body[i], 2, "\"X isn't Y. This is Z.\" reversal");
+    }
+  }
+
+  return { extra, runs, oneLinerShare: oneLiners.length / (paragraphs.length || 1), paragraphCount: paragraphs.length, bold, reversals };
+}
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 function cv(xs: number[]) {
@@ -175,10 +234,11 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
   let transitionHits = 0;
   let tripletHits = 0;
   let emDashes = 0;
+  const rhetoric = rhetoricPass(prose);
 
   for (const s of [...headings, ...prose]) {
-    const notes: string[] = [];
-    let points = 0;
+    const notes: string[] = [...(rhetoric.extra.get(s.index)?.notes ?? [])];
+    let points = rhetoric.extra.get(s.index)?.points ?? 0;
 
     for (const { re, weight } of TELL_RE) {
       for (const m of s.text.matchAll(re)) {
@@ -237,15 +297,18 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
   const titleCaseHeadings = headings.filter((h) => isTitleCase(h.text)).length;
 
   const n = prose.length || 1;
+  constructionHits += rhetoric.reversals;
   const sentenceCv = cv(lengths);
   const shortShare = lengths.filter((w) => w <= 7).length / (lengths.length || 1);
   const paraCv = cv(paraLengths);
   const enoughSentences = lengths.length >= 5;
   const enoughParagraphs = paraLengths.length >= 4;
 
-  const signals: (Signal & { weight: number })[] = [
+  // Each signal belongs to the older "corporate" AI style, the newer "punchy" one, or both.
+  const signals: (Signal & { weight: number; family: "classic" | "punchy" | "both" })[] = [
     {
       id: "tells",
+      family: "both",
       label: "Stock AI vocabulary",
       value: `${(tellPoints * per100).toFixed(1)} pts / 100 words`,
       score: clamp01((tellPoints * per100) / 3.5),
@@ -254,6 +317,7 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     },
     {
       id: "burstiness",
+      family: "classic",
       label: "Sentence-length variety",
       value: enoughSentences ? `CV ${sentenceCv.toFixed(2)}` : "too short to judge",
       score: enoughSentences ? ramp(sentenceCv, 0.7, 0.32) : 0.5,
@@ -262,14 +326,44 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     },
     {
       id: "short",
+      family: "both",
       label: "Short sentences",
       value: `${Math.round(shortShare * 100)}% of sentences ≤ 7 words`,
-      score: enoughSentences ? ramp(shortShare, 0.15, 0.02) : 0.5,
-      hint: "Human writers drop in short, punchy sentences. Models rarely do.",
+      // Two-sided: corporate AI prose has almost none; "punchy" AI prose is full of them.
+      score: enoughSentences ? Math.max(ramp(shortShare, 0.15, 0.02), ramp(shortShare, 0.28, 0.45)) : 0.5,
+      hint: "People mix in some short sentences. Older models rarely did; current models writing \"punchy\" overdo it.",
       weight: enoughSentences ? 1 : 0,
     },
     {
+      id: "oneliners",
+      family: "punchy",
+      label: "One-line paragraphs",
+      value: `${Math.round(rhetoric.oneLinerShare * 100)}% of paragraphs`,
+      score: rhetoric.paragraphCount >= 6 ? ramp(rhetoric.oneLinerShare, 0.12, 0.35) : 0,
+      hint: "Short mic-drop paragraphs (\"Let that sink in.\" / \"And that's the point.\") stacked between longer ones.",
+      weight: rhetoric.paragraphCount >= 6 ? 1.5 : 0,
+    },
+    {
+      id: "anaphora",
+      family: "punchy",
+      label: "Repeated sentence openers",
+      value: `${rhetoric.runs} run${rhetoric.runs === 1 ? "" : "s"} of 3+`,
+      score: ramp((rhetoric.runs * 50) / n, 0.3, 2),
+      hint: "Runs of sentences that start the same way (\"If… If… If…\", \"Places where… Places where…\").",
+      weight: 1.5,
+    },
+    {
+      id: "bold",
+      family: "punchy",
+      label: "Bolded punchlines",
+      value: `${rhetoric.bold} sentence${rhetoric.bold === 1 ? "" : "s"}`,
+      score: ramp((rhetoric.bold * 1000) / totalWords, 0.5, 4),
+      hint: "Whole sentences in bold to land the point.",
+      weight: 1,
+    },
+    {
       id: "constructions",
+      family: "both",
       label: "Stock constructions",
       value: `${constructionHits} found`,
       score: clamp01(constructionHits / (n * 0.12)),
@@ -278,6 +372,7 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     },
     {
       id: "transitions",
+      family: "classic",
       label: "Transition-word openers",
       value: `${Math.round((transitionHits / n) * 100)}% of sentences`,
       score: ramp(transitionHits / n, 0.04, 0.18),
@@ -286,6 +381,7 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     },
     {
       id: "triplets",
+      family: "classic",
       label: "Lists of three",
       value: `${Math.round((tripletHits / n) * 100)}% of sentences`,
       score: ramp(tripletHits / n, 0.06, 0.3),
@@ -294,6 +390,7 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     },
     {
       id: "paragraphs",
+      family: "classic",
       label: "Paragraph uniformity",
       value: enoughParagraphs ? `CV ${paraCv.toFixed(2)}` : "too few paragraphs",
       score: enoughParagraphs ? ramp(paraCv, 0.6, 0.2) : 0.5,
@@ -302,6 +399,7 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     },
     {
       id: "dashes",
+      family: "both",
       label: "Em-dashes",
       value: `${(emDashes * per100).toFixed(1)} / 100 words`,
       score: ramp(emDashes * per100, 0.3, 1.5),
@@ -310,6 +408,7 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     },
     {
       id: "conclusion",
+      family: "classic",
       label: "Wrap-up ending",
       value: wrapUp ? "yes" : "no",
       score: wrapUp ? 1 : 0,
@@ -318,6 +417,7 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     },
     {
       id: "headings",
+      family: "both",
       label: "Title Case headings",
       value: headings.length ? `${titleCaseHeadings} of ${headings.length}` : "no headings",
       score: headings.length >= 2 ? titleCaseHeadings / headings.length : 0,
@@ -326,8 +426,14 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     },
   ];
 
-  const weightSum = signals.reduce((a, s) => a + s.weight, 0);
-  const raw = signals.reduce((a, s) => a + s.score * s.weight, 0) / (weightSum || 1);
+  // Score each style family separately and take the stronger: text written in one AI
+  // style shouldn't get a pass for lacking the other style's tells.
+  const familyScore = (family: "classic" | "punchy") => {
+    const members = signals.filter((s) => s.family === family || s.family === "both");
+    const weightSum = members.reduce((a, s) => a + s.weight, 0);
+    return members.reduce((a, s) => a + s.score * s.weight, 0) / (weightSum || 1);
+  };
+  const raw = Math.max(familyScore("classic"), familyScore("punchy"));
   // Stretch the middle so clearly human and clearly AI text land near the ends of the scale.
   const score = 1 / (1 + Math.exp(-9 * (raw - 0.42)));
 
@@ -339,7 +445,7 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     score,
     sentenceScores,
     sentenceNotes,
-    signals: signals.map(({ weight: _w, ...s }) => s),
+    signals: signals.map(({ weight: _w, family: _f, ...s }) => s),
     tells,
     detail: `${tells.reduce((a, t) => a + t.count, 0)} stock phrases, ${constructionHits} stock constructions`,
   };

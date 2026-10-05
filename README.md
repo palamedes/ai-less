@@ -16,7 +16,7 @@ It runs locally: a small Node server plus a single-page UI in your browser.
 ln -s "$PWD/ai-less" ~/.local/bin/ai-less    # run it from anywhere
 ```
 
-The first run installs the npm dependencies, and the launcher reinstalls them whenever `package-lock.json` changes. The detector model (~500 MB) downloads from Hugging Face into `.cache/models/` on first launch. If ai-less is already running, `./ai-less` just opens the page again. Ctrl+C stops it.
+The first run installs the npm dependencies, and the launcher reinstalls them whenever `package-lock.json` changes. The detector models (~2 GB) download from Hugging Face into `.cache/models/` on first launch, which takes a few minutes. If ai-less is already running, `./ai-less` just opens the page again. Ctrl+C stops it.
 
 Requires Node 23.6 or newer, which runs the TypeScript directly with no build step. For development, `npm run dev` restarts the server on file changes without opening a browser.
 
@@ -33,24 +33,25 @@ Several detectors run in parallel. Their scores are combined as a weighted avera
 
 | Detector | Where it runs | Weight | Notes |
 |---|---|---|---|
-| **TMR RoBERTa** | local (ONNX, CPU) | 2.5 | RoBERTa-base trained on the [RAID](https://raid-bench.xyz) benchmark, including its paraphrase and adversarial attacks. 99.3% AUROC on the RAID leaderboard. |
-| **Style tells** | local | 1.5 | Stylometric heuristics: stock vocabulary, sentence-length variance ("burstiness"), "not just X, but Y" constructions, trailing "-ing" clauses, transition openers, lists of three, paragraph uniformity, em-dashes, wrap-up endings, Title Case headings. This is the detector that can say *why* a passage reads as AI. |
-| **Claude's read** | Claude API | 1 | A second opinion that flags specific sentences with reasons. LLMs are weak at scoring AI text, so it carries a low weight. It can be toggled off in the UI. |
+| **EditLens** | local (ONNX, CPU) | 3 | Pangram's open research model ([ICLR 2026](https://arxiv.org/abs/2510.03154)): RoBERTa-large trained on Claude Sonnet 4, GPT-4.1 and Gemini 2.5 output, including AI-edited human text. ~1.4 GB download. **Licensed CC BY-NC-SA 4.0, non-commercial use only.** Drop it with `AI_LESS_LOCAL_MODELS=tmr` if that doesn't fit your use. |
+| **TMR RoBERTa** | local (ONNX, CPU) | 1.5 | RoBERTa-base trained on the [RAID](https://raid-bench.xyz) benchmark (99.3% AUROC there). RAID's generators are 2023-era, so it misses current models' writing and flags encyclopedic prose. |
+| **Style tells** | local | 1.5 | Stylometric heuristics in two families, scored separately with the stronger one counting. *Classic:* stock vocabulary, uniform rhythm, "not just X, but Y", trailing "-ing" clauses, transition openers, lists of three, uniform paragraphs, wrap-up endings. *Punchy* (current models asked to sound human): runs of sentences with the same opener, one-line mic-drop paragraphs, bolded punchlines, "This isn't X. This is Y." reversals, "And yes, I know…" concessions. This is the detector that can say *why* a passage reads as AI. |
+| **Claude's read** | Claude | 2 | A second opinion that knows both styles and flags specific sentences with reasons. Runs on every rewrite pass; toggle it off in the UI. |
 | **Sapling / GPTZero / Winston / Originality.ai** | their APIs | 3 each | Optional. Each one turns on when its key is in `.env`. These are the detectors people actually get flagged by. Sapling has a free tier. |
 
 Calibration on the samples used during development:
 
-| Text | TMR | Style | Combined |
-|---|---|---|---|
-| Paul Graham essays (2 excerpts) | 2–3% | 8–11% | 5% |
-| Joel Spolsky, *The Joel Test* | 4% | 20% | 10% |
-| Jane Austen | 4% | 3% | 3% |
-| Wikipedia, *Sourdough* | 97% | 6% | 63% |
-| ChatGPT-style marketing post | 99% | 98% | 98% |
-| Claude-style how-to article | 97% | 94% | 96% |
-| …that article rewritten using the guide in `server/prompts.ts` | 3% | 5% | 4% |
+| Text | EditLens | TMR | Style | Claude | Combined |
+|---|---|---|---|---|---|
+| Paul Graham essays (2 excerpts) | 9–10% | 2–3% | 8–11% | | |
+| Joel Spolsky, *The Joel Test* | 17% | 4% | 28% | 3% | 13% |
+| Jane Austen | 4% | 4% | 3% | | |
+| Wikipedia, *Sourdough* | 3% | 97% | 6% | 3% | 21% |
+| ChatGPT-style marketing post | 100% | 99% | 98% | | |
+| Claude-style how-to article | 66% | 97% | 93% | | |
+| An opinionated op-ed written by a current frontier model (Pangram and GPTZero: 100% AI) | 26% | 5% | 78% | 90% | 48% |
 
-Encyclopedic prose like Wikipedia is a known false positive for most AI detectors, and TMR is no exception. Treat every score as an estimate. Detectors disagree, and no single one is authoritative.
+That last row is the honest limit of local detection. Pangram's production detector is far stronger than its open research model, and on current models' "punchy" writing no free local classifier comes close to it. The style tells and Claude's read are what catch it here. Treat every score as an estimate, and check final drafts with the detector you actually care about.
 
 ## How the rewrite works
 

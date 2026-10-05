@@ -22,14 +22,27 @@ interface Spec {
   name: string;
   repo: string;
   weight: number;
-  aiIndex: number; // logit index of the "AI-generated" class
+  // Turns class probabilities into a 0-1 "how AI" score.
+  score: (probs: number[]) => number;
 }
 
 const SPECS: Spec[] = [
-  // RoBERTa-base trained on RAID (incl. paraphrase/adversarial attacks); 99.3% AUROC on the RAID leaderboard.
-  { id: "tmr", name: "TMR RoBERTa", repo: "onnx-community/tmr-ai-text-detector-ONNX", weight: 2.5, aiIndex: 1 },
-  // Small E5 encoder with a LoRA head. Noisier on human text, but a second, independent opinion.
-  { id: "e5", name: "E5 LoRA", repo: "onnx-community/e5-small-lora-ai-generated-detector-ONNX", weight: 1, aiIndex: 1 },
+  // Pangram's EditLens (ICLR 2026), RoBERTa-large trained on Claude Sonnet 4, GPT-4.1 and Gemini 2.5
+  // output, including AI-edited human text. Four buckets from human to fully AI; the score is their
+  // expected value, as in the paper. Licensed CC BY-NC-SA 4.0: non-commercial use only.
+  // Community ONNX conversion of pangram/editlens_roberta-large (weights byte-identical upstream).
+  {
+    id: "editlens",
+    name: "EditLens",
+    repo: "CoderBak/editlens_roberta_modelkit",
+    weight: 3,
+    score: (p) => p.reduce((a, v, i) => a + v * (i / (p.length - 1)), 0),
+  },
+  // RoBERTa-base trained on RAID (incl. paraphrase/adversarial attacks); 99.3% AUROC on the RAID
+  // leaderboard, but RAID's generators are 2023-era, so it misses current models' writing.
+  { id: "tmr", name: "TMR RoBERTa", repo: "onnx-community/tmr-ai-text-detector-ONNX", weight: 1.5, score: (p) => p[1] },
+  // Small E5 encoder with a LoRA head. Noisy on human text; off by default.
+  { id: "e5", name: "E5 LoRA", repo: "onnx-community/e5-small-lora-ai-generated-detector-ONNX", weight: 1, score: (p) => p[1] },
 ];
 
 export type ModelStatus = "idle" | "loading" | "ready" | "error";
@@ -49,7 +62,7 @@ class LocalClassifier {
     this.loading ??= (async () => {
       this.status = "loading";
       if (!fs.existsSync(path.join(config.modelCacheDir, this.spec.repo))) {
-        console.log(`[local] downloading ${this.spec.name} from Hugging Face (first run only, a few hundred MB)…`);
+        console.log(`[local] downloading ${this.spec.name} from Hugging Face (first run only; can take a few minutes)…`);
       }
       try {
         const [tokenizer, model] = await Promise.all([
@@ -83,7 +96,8 @@ class LocalClassifier {
           const row = Array.from(data.subarray(r * cols, (r + 1) * cols));
           const max = Math.max(...row);
           const exps = row.map((v) => Math.exp(v - max));
-          out.push(exps[this.spec.aiIndex] / exps.reduce((a, b) => a + b, 0));
+          const total = exps.reduce((a, b) => a + b, 0);
+          out.push(this.spec.score(exps.map((e) => e / total)));
         }
       }
       return out;

@@ -26,18 +26,26 @@ Never add facts, statistics, examples, anecdotes, quotations, sources, or opinio
 AI-text detectors, and attentive readers, key on these patterns. Fix them.
 
 1. **Predictable word choice.** Models pick the most statistically likely word, so the prose feels frictionless and generic. Use the word this particular author would reach for: often plainer ("use", not "leverage" or "utilize"; "help", not "facilitate"), sometimes more concrete or vivid. Don't swap in thesaurus words; odd synonyms read as fake too.
-2. **Flat rhythm.** Model sentences cluster at 15–25 words with similar shapes and similar openings. Vary them for real: some very short sentences (three to six words), some long ones that wind through a thought with a parenthetical or a turn. Fragments are fine where the voice allows. Don't start consecutive sentences the same way.
+2. **Engineered rhythm.** Older models write sentences of the same length and shape; current models over-correct into a drumbeat of short punches. Human rhythm follows the thought: mostly medium and long sentences, some that wind through a qualification or a turn, and now and then a short one where it's earned. Don't start consecutive sentences the same way.
 3. **Stock vocabulary.** delve, tapestry, testament, realm, landscape, navigate, leverage, foster, robust, seamless, crucial, pivotal, intricate, comprehensive, holistic, myriad, plethora, paramount, underscore, showcase, elevate, empower, streamline, unlock, harness, transformative, vibrant, resonate, invaluable, game-changer, "in today's fast-paced world", "it's important to note", "when it comes to", "plays a crucial role", "a wide range of". Replace them with what the sentence actually means.
-4. **Stock constructions.** "It's not just X, it's Y", "not only… but also", "whether you're X or Y", "From X to Y,", "The result? …", "Here's the thing:", "X is key", and trailing participle clauses (", ensuring that…", ", making it…", ", highlighting…"). Use them rarely or never. Not everything comes in threes. Use two items, or four, or one, unless the content really has three.
-5. **Signposting.** Sentence-initial Additionally / Moreover / Furthermore / In addition / Ultimately / Overall / Importantly, and announcements like "Let's dive in" or "In this article we'll explore". Most sentences connect through their logic and need no connective at all; when one helps, a plain "But", "And", "So", or "Still" usually does the job.
-6. **Template paragraphs.** Topic sentence, two supporting sentences, then a wrap-up line restating the point, every time, at the same size. Let paragraph length follow the thought: some long, some a single sentence. Cut the moralizing last lines.
-7. **Hedged, frictionless tone.** Everything "can help", "may", "is essential"; relentless positivity; balanced both-sides framing. Where the draft commits to a claim, say it plainly. Keep whatever edge, humor, or opinion the author has. Don't sand it off.
-8. **Formatting tics.** Em-dashes everywhere (aim for at most one or two in the whole piece; commas, parentheses, colons, and full stops do the same work), bolded lead-ins on every list item, Title Case headings, emoji. Prose usually beats a bulleted list of three-word fragments, but keep real lists (steps, specs, ingredients) as lists.
-9. **The wrap-up ending.** A final paragraph that opens "In conclusion" / "Ultimately" / "By doing X, you can…" and summarizes everything on an uplifting note. Keep the draft's closing point, but end the way a person would: briefly, and often on something specific.
+4. **Manufactured punch.** This is how current models write when asked to sound human or opinionated, and detectors like Pangram and GPTZero now catch it reliably:
+   - runs of sentences that open the same way ("We don't notice X. We don't notice Y. We don't notice Z.", "Places where… Places where…"); keep the content, but vary or merge them so the pattern isn't a drumbeat
+   - one-line mic-drop paragraphs ("Let that sink in." / "And that's the point." / "Freedom is."); fold them into the paragraph they belong to, inside a fuller sentence
+   - whole sentences in bold to land a point; drop the bold and let the sentence do the work
+   - "This isn't X. This is Y." and "It isn't. Not X, not Y, and not even Z." reversals
+   - stacked fragment lists ("Bread at dawn. Coffee from Kenya. Cheese from France."); make them a real sentence
+   - preemptive concessions ("And yes, I know…"), rhetorical question-and-answer beats ("So which is it?"), and aphorisms built to be quoted ("Comfort is a quiet thief.")
+   Keep the author's opinions, profanity, humor, and edge exactly as strong as they are. Those are human signals. Deliver them inside the flow of the argument rather than as standalone beats.
+5. **Stock constructions.** "It's not just X, it's Y", "not only… but also", "whether you're X or Y", "From X to Y,", "The result? …", "Here's the thing:", "X is key", and trailing participle clauses (", ensuring that…", ", making it…", ", highlighting…"). Use them rarely or never. Not everything comes in threes. Use two items, or four, or one, unless the content really has three.
+6. **Signposting.** Sentence-initial Additionally / Moreover / Furthermore / In addition / Ultimately / Overall / Importantly, and announcements like "Let's dive in" or "In this article we'll explore". Most sentences connect through their logic and need no connective at all; when one helps, a plain "But", "And", "So", or "Still" usually does the job.
+7. **Template paragraphs.** Topic sentence, two supporting sentences, then a wrap-up line restating the point, every time, at the same size. Let paragraph length follow the thought, and let a paragraph carry more than one move (a claim, its qualification, an example, a stray observation). Cut the moralizing last lines.
+8. **Hedged, frictionless tone.** Everything "can help", "may", "is essential"; relentless positivity; balanced both-sides framing. Where the draft commits to a claim, say it plainly. Keep whatever edge, humor, or opinion the author has. Don't sand it off.
+9. **Formatting tics.** Em-dashes everywhere (aim for at most one or two in the whole piece; commas, parentheses, colons, and full stops do the same work), bolded sentences and bolded lead-ins on every list item, Title Case headings, emoji. Prose usually beats a bulleted list of three-word fragments, but keep real lists (steps, specs, ingredients) as lists.
+10. **The wrap-up ending.** A final paragraph that opens "In conclusion" / "Ultimately" / "By doing X, you can…" and summarizes everything on an uplifting note. Keep the draft's closing point, but end the way a person would: briefly, and often on something specific.
 
 ## Human texture you can add without changing meaning
 
-Contractions where the voice allows. Starting a sentence with And, But, or So. A short reaction or aside that restates something the draft already implies ("That's the catch." / "(Most people skip this.)"). Concrete nouns and active verbs. Questions the author would plausibly ask. An occasional sentence that's a little loose or conversational, the way careful people actually write.
+Contractions where the voice allows. A parenthetical aside that restates something the draft already implies. Concrete nouns and active verbs. Connective tissue between ideas: "which is why", "and that's before you count", "the funny part is". Some points that land quietly instead of with a flourish. An occasional sentence that's a little loose or runs on, the way careful people actually write when they're thinking rather than performing.
 
 Don't introduce typos or grammatical errors, slang the author wouldn't use, invisible characters, homoglyphs, or deliberately awkward phrasing. The goal is writing that is genuinely good and genuinely human-sounding, not noise that confuses a detector. It should read better than the draft, not worse.
 
@@ -49,14 +57,14 @@ const INTENSITY: Record<Intensity, string> = {
   light:
     "Intensity: LIGHT. Make the smallest set of edits that removes the machine tells: stock words and constructions, signposting, the flattest rhythm. Leave sentences that already sound natural exactly as they are. Most of the article should be recognizably the same sentences.",
   balanced:
-    "Intensity: BALANCED. Rewrite freely at the sentence level (rephrase, merge, split, reorder within a paragraph) while keeping the paragraph structure and section order.",
+    "Intensity: BALANCED. Rewrite freely at the sentence level (rephrase, merge, split, reorder within a paragraph) while keeping the section order. Keep the paragraph structure, except fold one-line punch paragraphs into their neighbors.",
   bold:
     "Intensity: BOLD. Rebuild the prose from the ideas up. Restructure paragraphs, change how each point is set up and landed, and turn list-heavy sections into prose where that reads more naturally, while keeping every point, the section order, and the author's voice.",
 };
 
 function formattingRule(keep: boolean) {
   return keep
-    ? "Keep the draft's formatting conventions (Markdown headings, lists, links, emphasis) unless a specific element is itself a machine tell."
+    ? "Keep the draft's formatting conventions (Markdown headings, lists, links) unless a specific element is itself a machine tell. Bolded whole sentences are one; a bolded word or two for emphasis is fine."
     : "You may change formatting freely; plain paragraphs are fine.";
 }
 

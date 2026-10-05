@@ -186,7 +186,7 @@ function emptyView() {
       <li><b>De-AI it</b> has Claude rewrite it, re-scores each draft, and revises the passages that still flag until it hits your target.</li>
       <li>A final check compares the rewrite to your original so nothing gets added, dropped, or changed.</li>
     </ol>
-    <p class="fine">Scores come from a local RoBERTa classifier trained on the RAID benchmark, a set of style heuristics, optionally Claude's own read, and any commercial detectors you add keys for. No detector is perfect, and they often disagree, so treat the number as an estimate.</p>
+    <p class="fine">Scores come from local classifiers (Pangram's open EditLens model and a RAID-trained RoBERTa), style heuristics, optionally Claude's own read, and any commercial detectors you add keys for. No detector is perfect, and they often disagree, so treat the number as an estimate and check final drafts with the detector you care about.</p>
   </div>`;
 }
 

@@ -120,7 +120,7 @@ export async function humanize(
   const before = await cachedAnalyze(original, "full", opts.judge, signal);
   await emit({ type: "before", analysis: before });
 
-  let best = { text: original, score: (await cachedAnalyze(original, "fast", false, signal)).overall, pass: 0 };
+  let best = { text: original, score: (await cachedAnalyze(original, "fast", opts.judge, signal)).overall, pass: 0 };
   let draft = original;
   let latest: Analysis = before;
 
@@ -155,7 +155,7 @@ export async function humanize(
     if (!draft) throw new PipelineError("Claude returned an empty rewrite.");
 
     await emit({ type: "stage", stage: "scoring", pass, message: "Scoring the draft" });
-    latest = await cachedAnalyze(draft, "fast", false, signal);
+    latest = await cachedAnalyze(draft, "fast", opts.judge, signal);
     const isBest = latest.overall < best.score;
     if (isBest) best = { text: draft, score: latest.overall, pass };
     await emit({ type: "draft", pass, text: draft, analysis: latest, best: isBest });
