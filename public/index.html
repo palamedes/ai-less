@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ai-less</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231d1c1a'/><path d='M9 22 L16 9 L23 22' stroke='%23f6f5f1' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/><path d='M7 16 H25' stroke='%23f0654a' stroke-width='3' stroke-linecap='round'/></svg>">
+  <link rel="stylesheet" href="styles.css">
+  <script src="/vendor/diff.min.js" defer></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">ai<b>-less</b></span>
+      <span class="tagline">Score it. Rewrite it. Keep the voice.</span>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <main class="layout">
+    <section class="pane input-pane" aria-label="Article">
+      <div class="pane-head">
+        <h2>Article</h2>
+        <span class="meta" id="wordCount">0 words</span>
+        <button class="ghost small" id="clearBtn" type="button">Clear</button>
+      </div>
+
+      <div class="dropzone" id="dropzone">
+        <textarea id="input" spellcheck="false"
+          placeholder="Paste an article here, or drop a .txt, .md, or .html file."></textarea>
+        <div class="drop-hint">Drop to load</div>
+      </div>
+
+      <div class="options">
+        <div class="opt">
+          <span class="opt-label">Intensity</span>
+          <div class="seg" id="intensity" role="radiogroup" aria-label="Rewrite intensity">
+            <button type="button" role="radio" data-v="light" title="Fix the tells, keep most sentences as they are">Light</button>
+            <button type="button" role="radio" data-v="balanced" title="Rewrite sentence by sentence, keep the paragraph structure">Balanced</button>
+            <button type="button" role="radio" data-v="bold" title="Rebuild the prose from the ideas up">Bold</button>
+          </div>
+        </div>
+        <div class="opt">
+          <label class="opt-label" for="target">Target <output id="targetOut">20%</output></label>
+          <input type="range" id="target" min="5" max="50" step="5" value="20">
+        </div>
+        <div class="opt">
+          <label class="opt-label" for="passes">Max passes</label>
+          <select id="passes">
+            <option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option>
+          </select>
+        </div>
+        <div class="opt checks">
+          <label class="check"><input type="checkbox" id="keepFormatting" checked> Keep formatting</label>
+          <label class="check" title="Ask Claude for a second-opinion read (adds a few seconds)"><input type="checkbox" id="judge" checked> Claude's read</label>
+        </div>
+        <details class="voice" id="voiceBox">
+          <summary>Voice notes <span class="meta">optional</span></summary>
+          <textarea id="voiceNotes" rows="2" placeholder="e.g. Casual, first person, written for homeowners. Keep the jokes."></textarea>
+        </details>
+      </div>
+
+      <div class="actions">
+        <button id="analyzeBtn" class="secondary" type="button">Analyze <kbd>Ctrl ⏎</kbd></button>
+        <button id="humanizeBtn" class="primary" type="button">De-AI it</button>
+      </div>
+    </section>
+
+    <section class="pane report-pane" id="report" aria-live="polite"></section>
+  </main>
+
+  <div class="tip" id="tip" role="tooltip" hidden></div>
+  <div class="toast" id="toast" hidden></div>
+</body>
+</html>
