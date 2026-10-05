@@ -22,6 +22,7 @@ interface Spec {
   name: string;
   repo: string;
   weight: number;
+  noisy?: boolean;
   // Turns class probabilities into a 0-1 "how AI" score.
   score: (probs: number[]) => number;
 }
@@ -39,10 +40,11 @@ const SPECS: Spec[] = [
     score: (p) => p.reduce((a, v, i) => a + v * (i / (p.length - 1)), 0),
   },
   // RoBERTa-base trained on RAID (incl. paraphrase/adversarial attacks); 99.3% AUROC on the RAID
-  // leaderboard, but RAID's generators are 2023-era, so it misses current models' writing.
-  { id: "tmr", name: "TMR RoBERTa", repo: "onnx-community/tmr-ai-text-detector-ONNX", weight: 1.5, score: (p) => p[1] },
+  // leaderboard, but RAID's generators are 2023-era: it misses current models and flags encyclopedic
+  // prose (97% on a Wikipedia article). Off by default.
+  { id: "tmr", name: "TMR RoBERTa", repo: "onnx-community/tmr-ai-text-detector-ONNX", weight: 1.5, noisy: true, score: (p) => p[1] },
   // Small E5 encoder with a LoRA head. Noisy on human text; off by default.
-  { id: "e5", name: "E5 LoRA", repo: "onnx-community/e5-small-lora-ai-generated-detector-ONNX", weight: 1, score: (p) => p[1] },
+  { id: "e5", name: "E5 LoRA", repo: "onnx-community/e5-small-lora-ai-generated-detector-ONNX", weight: 1, noisy: true, score: (p) => p[1] },
 ];
 
 export type ModelStatus = "idle" | "loading" | "ready" | "error";
@@ -119,6 +121,7 @@ function toDetector(c: LocalClassifier): Detector {
     name: c.spec.name,
     kind: "local",
     weight: c.spec.weight,
+    noisy: c.spec.noisy,
     fast: true,
     enabled: () => c.status !== "error",
     async detect(_text, sentences): Promise<Detection> {

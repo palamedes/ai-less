@@ -29,29 +29,30 @@ The status pill at the top of the page shows which route is in use.
 
 ## How scoring works
 
-Several detectors run in parallel. Their scores are combined as a weighted average, both for the whole document and per sentence for the heatmap.
+Several detectors run in parallel. Detectors fail by missing things more than by inventing them: on current models' writing, some see nothing while others are certain it's AI. So the overall score leans on the strongest signal, at **70% of the highest detector score plus 30% of the weighted average**. Detectors marked noisy (TMR, E5) count toward the average but can't lead. The heatmap uses the weighted average per sentence.
 
 | Detector | Where it runs | Weight | Notes |
 |---|---|---|---|
-| **EditLens** | local (ONNX, CPU) | 3 | Pangram's open research model ([ICLR 2026](https://arxiv.org/abs/2510.03154)): RoBERTa-large trained on Claude Sonnet 4, GPT-4.1 and Gemini 2.5 output, including AI-edited human text. ~1.4 GB download. **Licensed CC BY-NC-SA 4.0, non-commercial use only.** Drop it with `AI_LESS_LOCAL_MODELS=tmr` if that doesn't fit your use. |
-| **TMR RoBERTa** | local (ONNX, CPU) | 1.5 | RoBERTa-base trained on the [RAID](https://raid-bench.xyz) benchmark (99.3% AUROC there). RAID's generators are 2023-era, so it misses current models' writing and flags encyclopedic prose. |
+| **EditLens** | local (ONNX, CPU) | 3 | Pangram's open research model ([ICLR 2026](https://arxiv.org/abs/2510.03154)): RoBERTa-large trained on Claude Sonnet 4, GPT-4.1 and Gemini 2.5 output, including AI-edited human text. ~1.4 GB download. **Licensed CC BY-NC-SA 4.0, non-commercial use only.** Drop it with `AI_LESS_LOCAL_MODELS=off` if that doesn't fit your use. |
+| **TMR RoBERTa** | local (ONNX, CPU) | 1.5, noisy | Off by default (`AI_LESS_LOCAL_MODELS=editlens,tmr` turns it on). RoBERTa-base trained on the [RAID](https://raid-bench.xyz) benchmark (99.3% AUROC there). RAID's generators are 2023-era, so it misses current models' writing and flags encyclopedic prose. |
 | **Style tells** | local | 1.5 | Stylometric heuristics in two families, scored separately with the stronger one counting. *Classic:* stock vocabulary, uniform rhythm, "not just X, but Y", trailing "-ing" clauses, transition openers, lists of three, uniform paragraphs, wrap-up endings. *Punchy* (current models asked to sound human): runs of sentences with the same opener, one-line mic-drop paragraphs, bolded punchlines, "This isn't X. This is Y." reversals, "And yes, I know…" concessions. This is the detector that can say *why* a passage reads as AI. |
 | **Claude's read** | Claude | 2 | A second opinion that knows both styles and flags specific sentences with reasons. Runs on every rewrite pass; toggle it off in the UI. |
 | **Sapling / GPTZero / Winston / Originality.ai** | their APIs | 3 each | Optional. Each one turns on when its key is in `.env`. These are the detectors people actually get flagged by. Sapling has a free tier. |
 
 Calibration on the samples used during development:
 
-| Text | EditLens | TMR | Style | Claude | Combined |
+| Text | EditLens | Style | Claude | TMR (off) | Overall |
 |---|---|---|---|---|---|
-| Paul Graham essays (2 excerpts) | 9–10% | 2–3% | 8–11% | | |
-| Joel Spolsky, *The Joel Test* | 17% | 4% | 28% | 3% | 13% |
-| Jane Austen | 4% | 4% | 3% | | |
-| Wikipedia, *Sourdough* | 3% | 97% | 6% | 3% | 21% |
-| ChatGPT-style marketing post | 100% | 99% | 98% | | |
-| Claude-style how-to article | 66% | 97% | 93% | | |
-| An opinionated op-ed written by a current frontier model (Pangram and GPTZero: 100% AI) | 26% | 5% | 78% | 90% | 48% |
+| Paul Graham essays (2 excerpts) | 9–10% | 8–11% | 2–4% | 2% | 9–10% |
+| Joel Spolsky, *The Joel Test* | 17% | 28% | 3% | 4% | 24% |
+| Jane Austen | 4% | 3% | 1% | 4% | 4% |
+| Wikipedia, *Sourdough* | 3% | 6% | 3% | 97% | 5% |
+| ChatGPT-style marketing post | 100% | 98% | 97% | 99% | 100% |
+| Claude-style how-to article | 66% | 94% | 88% | 97% | 89% |
+| An opinionated op-ed written by a current frontier model (Pangram and GPTZero: 100% AI) | 26% | 78% | 90% | 5% | 80% |
+| …that op-ed after an ai-less rewrite | 13% | 4% | 85% | 3% | 69% |
 
-That last row is the honest limit of local detection. Pangram's production detector is far stronger than its open research model, and on current models' "punchy" writing no free local classifier comes close to it. The style tells and Claude's read are what catch it here. Treat every score as an estimate, and check final drafts with the detector you actually care about.
+The op-ed rows are the honest limit of local detection. Pangram's production detector is far stronger than its open research model, and on current models' "punchy" writing no free local classifier comes close to it. The style tells and Claude's read are what catch it here. Treat every score as an estimate, and check final drafts with the detector you actually care about.
 
 ## How the rewrite works
 

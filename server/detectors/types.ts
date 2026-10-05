@@ -24,6 +24,7 @@ export interface DetectorResult extends Partial<Detection> {
   name: string;
   kind: DetectorKind;
   weight: number;
+  noisy?: boolean;
   ms: number;
   error?: string;
 }
@@ -33,6 +34,9 @@ export interface Detector {
   name: string;
   kind: DetectorKind;
   weight: number;
+  // Noisy detectors (known blind spots or false positives) count toward the average but can't
+  // set the overall score on their own.
+  noisy?: boolean;
   // Fast detectors run on every pass of the rewrite loop; slow/paid ones only on full analyses.
   fast: boolean;
   enabled(): boolean;

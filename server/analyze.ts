@@ -16,6 +16,7 @@ export interface SentenceView extends Omit<Sentence, "words"> {
 export interface Analysis {
   overall: number; // 0-100
   verdict: string;
+  lead?: { name: string; score: number }; // the detector that most drove the overall score
   words: number;
   mode: "full" | "fast";
   detectors: Omit<DetectorResult, "sentenceScores" | "sentenceNotes" | "signals" | "tells">[];
@@ -39,7 +40,7 @@ export function verdict(overall: number) {
 
 async function run(d: Detector, text: string, sentences: Sentence[], signal?: AbortSignal): Promise<DetectorResult> {
   const t0 = performance.now();
-  const base = { id: d.id, name: d.name, kind: d.kind, weight: d.weight };
+  const base = { id: d.id, name: d.name, kind: d.kind, weight: d.weight, noisy: d.noisy };
   try {
     const result: Detection = await d.detect(text, sentences, signal);
     return { ...base, ...result, ms: Math.round(performance.now() - t0) };
@@ -57,8 +58,16 @@ export async function analyze(text: string, opts: AnalyzeOptions): Promise<Analy
   const results = await Promise.all(active.map((d) => run(d, text, sentences, opts.signal)));
   const ok = results.filter((r) => r.error === undefined && typeof r.score === "number");
 
+  // Detectors fail by missing things, not by inventing them: on current models' writing some
+  // see nothing while others are confident it's AI. A plain average lets the blind ones outvote
+  // the ones that caught it, so the overall score leans on the strongest signal (tempered by the
+  // average). On the development samples this keeps human text at 4-24% and puts AI text,
+  // including rewritten AI text, at 66-100%.
   const weightSum = ok.reduce((a, r) => a + r.weight, 0);
-  const overall = weightSum ? (100 * ok.reduce((a, r) => a + r.score! * r.weight, 0)) / weightSum : 0;
+  const mean = weightSum ? ok.reduce((a, r) => a + r.score! * r.weight, 0) / weightSum : 0;
+  const leaders = ok.filter((r) => !r.noisy);
+  const lead = (leaders.length ? leaders : ok).reduce<DetectorResult | undefined>((a, r) => (!a || r.score! > a.score! ? r : a), undefined);
+  const overall = lead ? 100 * (0.7 * lead.score! + 0.3 * mean) : 0;
 
   const views: SentenceView[] = sentences.map(({ words: _w, ...s }) => {
     let total = 0;
@@ -79,6 +88,7 @@ export async function analyze(text: string, opts: AnalyzeOptions): Promise<Analy
   return {
     overall: Math.round(overall * 10) / 10,
     verdict: verdict(overall),
+    lead: lead ? { name: lead.name, score: Math.round(lead.score! * 1000) / 10 } : undefined,
     words: countWords(text),
     mode: opts.mode,
     detectors: results.map(({ sentenceScores: _s, sentenceNotes: _n, signals: _g, tells: _t, ...r }) => ({

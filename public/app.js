@@ -302,7 +302,7 @@ function scoreCard(analysis, extra = "") {
   const ok = analysis.detectors.filter((d) => !d.error).length;
   return `<div class="score-card">${gauge(analysis.overall)}
     <div class="score-text"><div class="verdict">${esc(analysis.verdict)}</div>
-    <div class="sub">${analysis.words.toLocaleString()} words · ${ok} detector${ok === 1 ? "" : "s"}${extra}</div></div></div>`;
+    <div class="sub">${analysis.words.toLocaleString()} words · ${ok} detector${ok === 1 ? "" : "s"}${analysis.lead ? ` · strongest signal: ${esc(analysis.lead.name)} ${pct(analysis.lead.score)}` : ""}${extra}</div></div></div>`;
 }
 
 function analysisBlocks(text, analysis) {
