@@ -1,3 +1,4 @@
+import { describeClaudeError } from "./claude.ts";
 import { claudeJudge } from "./detectors/claude-judge.ts";
 import { externalDetectors } from "./detectors/external.ts";
 import { heuristics } from "./detectors/heuristics.ts";
@@ -43,7 +44,8 @@ async function run(d: Detector, text: string, sentences: Sentence[], signal?: Ab
     const result: Detection = await d.detect(text, sentences, signal);
     return { ...base, ...result, ms: Math.round(performance.now() - t0) };
   } catch (err) {
-    return { ...base, error: (err as Error).message, ms: Math.round(performance.now() - t0) };
+    const error = d.kind === "llm" ? describeClaudeError(err) : (err as Error).message;
+    return { ...base, error, ms: Math.round(performance.now() - t0) };
   }
 }
 

@@ -33,7 +33,11 @@ export function describeClaudeError(err: unknown): string {
     return `Claude rejected the credentials (${err.status}). ${hint}`;
   }
   if (err instanceof Anthropic.RateLimitError) return "Claude rate limit hit; wait a moment and try again.";
-  if (err instanceof Anthropic.APIError) return `Claude API error ${err.status ?? ""}: ${err.message}`;
+  if (err instanceof Anthropic.APIError) {
+    // The API's own explanation, without the raw JSON envelope around it.
+    const body = err.error as { error?: { message?: string } } | undefined;
+    return `Claude API error ${err.status ?? ""}: ${body?.error?.message ?? err.message}`;
+  }
   if (err instanceof Error && err.name === "AbortError") return "Cancelled.";
   // Credential resolution failures (no key, expired login) are thrown before any request is made.
   return `${(err as Error)?.message ?? String(err)} ${hint}`;
