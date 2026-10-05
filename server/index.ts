@@ -10,7 +10,8 @@ import { describeClaudeError, PipelineError } from "./claude.ts";
 import { config, ROOT } from "./config.ts";
 import { externalDetectors } from "./detectors/external.ts";
 import { classifiers, warmUp } from "./detectors/local-models.ts";
-import { cachedAnalyze, humanize } from "./humanize.ts";
+import { cachedAnalyze } from "./analyze.ts";
+import { checkFidelity, humanize } from "./humanize.ts";
 import { llmStatus, probeLlm } from "./llm.ts";
 
 const USAGE = `Usage: ai-less [--port N] [--host ADDR] [--no-browser]
@@ -97,6 +98,21 @@ app.post("/api/analyze", async (c) => {
   await ensureClaude();
   const { text, judge } = parsed.data;
   return c.json(await cachedAnalyze(text, "full", judge && llmStatus.ok, c.req.raw.signal));
+});
+
+// Meaning check for any draft on demand (the rewrite loop only checks the best one).
+const FidelityBody = z.object({ original: Text, rewrite: Text });
+app.post("/api/fidelity", async (c) => {
+  const parsed = FidelityBody.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Bad request" }, 400);
+  const status = await ensureClaude();
+  if (!status.ok) return c.json({ error: status.error ?? "Claude isn't connected." }, 503);
+  try {
+    const { fidelity } = await checkFidelity(parsed.data.original, parsed.data.rewrite, c.req.raw.signal);
+    return c.json({ fidelity });
+  } catch (err) {
+    return c.json({ error: describeClaudeError(err) }, 502);
+  }
 });
 
 app.post("/api/humanize", async (c) => {

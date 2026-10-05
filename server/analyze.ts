@@ -18,7 +18,6 @@ export interface Analysis {
   verdict: string;
   lead?: { name: string; score: number }; // the detector that most drove the overall score
   words: number;
-  mode: "full" | "fast";
   detectors: Omit<DetectorResult, "sentenceScores" | "sentenceNotes" | "signals" | "tells">[];
   sentences: SentenceView[];
   signals: Signal[];
@@ -50,11 +49,14 @@ async function run(d: Detector, text: string, sentences: Sentence[], signal?: Ab
   }
 }
 
+// Fast mode skips slow/paid detectors (commercial APIs); it's what the rewrite loop uses per pass.
+export function activeDetectors(mode: "full" | "fast", judge: boolean) {
+  return detectors.filter((d) => d.enabled() && (mode === "full" || d.fast) && (d.id !== "claude" || judge));
+}
+
 export async function analyze(text: string, opts: AnalyzeOptions): Promise<Analysis> {
   const sentences = splitSentences(text);
-  const active = detectors.filter(
-    (d) => d.enabled() && (opts.mode === "full" || d.fast) && (d.id !== "claude" || opts.judge),
-  );
+  const active = activeDetectors(opts.mode, opts.judge ?? false);
   const results = await Promise.all(active.map((d) => run(d, text, sentences, opts.signal)));
   const ok = results.filter((r) => r.error === undefined && typeof r.score === "number");
 
@@ -90,7 +92,6 @@ export async function analyze(text: string, opts: AnalyzeOptions): Promise<Analy
     verdict: verdict(overall),
     lead: lead ? { name: lead.name, score: Math.round(lead.score! * 1000) / 10 } : undefined,
     words: countWords(text),
-    mode: opts.mode,
     detectors: results.map(({ sentenceScores: _s, sentenceNotes: _n, signals: _g, tells: _t, ...r }) => ({
       ...r,
       score: typeof r.score === "number" ? Math.round(r.score * 1000) / 1000 : undefined,
@@ -99,6 +100,29 @@ export async function analyze(text: string, opts: AnalyzeOptions): Promise<Analy
     signals: style?.signals ?? [],
     tells: style?.tells ?? [],
   };
+}
+
+// Analyses are cached by the exact set of detectors that ran, so "Analyze" followed by "De-AI it",
+// and a final full score of a draft the loop already scored, don't redo identical work. Results
+// with a failed detector aren't cached, so that detector gets another try next time.
+const cache = new Map<string, Analysis>();
+const cacheKey = (text: string, mode: "full" | "fast", judge: boolean) =>
+  `${activeDetectors(mode, judge).map((d) => d.id).join(",")}\n${text}`;
+
+export function cachedAnalysis(text: string, mode: "full" | "fast", judge: boolean) {
+  return cache.get(cacheKey(text, mode, judge));
+}
+
+export async function cachedAnalyze(text: string, mode: "full" | "fast", judge: boolean, signal?: AbortSignal) {
+  const key = cacheKey(text, mode, judge);
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const result = await analyze(text, { mode, judge, signal });
+  if (result.detectors.every((d) => !d.error)) {
+    cache.set(key, result);
+    if (cache.size > 40) cache.delete(cache.keys().next().value!);
+  }
+  return result;
 }
 
 // The passages most worth rewriting, highest score first.

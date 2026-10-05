@@ -371,15 +371,20 @@ async function* readSSE(body) {
 function runView() {
   els.report.innerHTML = `
     <div class="run-head"></div>
-    <div><div class="section-title">Progress</div><div class="steps"></div></div>
-    <div class="live-wrap" hidden><div class="section-title"><span class="live-title">Draft</span><span class="meta live-meta"></span></div><div class="article live"></div></div>`;
+    <div><div class="section-title">Progress <span class="meta steps-hint" hidden>click a version to read it</span></div><div class="steps"></div></div>
+    <div class="live-wrap" hidden>
+      <div class="section-title"><span class="live-title">Draft</span><button class="linkish back" type="button" hidden>Back to the draft being written</button><span class="meta live-meta"></span></div>
+      <div class="article live"></div>
+    </div>`;
   return {
     head: els.report.querySelector(".run-head"),
     steps: els.report.querySelector(".steps"),
+    hint: els.report.querySelector(".steps-hint"),
     liveWrap: els.report.querySelector(".live-wrap"),
     liveTitle: els.report.querySelector(".live-title"),
     liveMeta: els.report.querySelector(".live-meta"),
     live: els.report.querySelector(".live"),
+    back: els.report.querySelector(".back"),
   };
 }
 
@@ -391,6 +396,8 @@ function addStep(view, label) {
   view.steps.append(el);
   return el;
 }
+
+const scoreChip = (label, overall) => `${esc(label)} <span class="score" style="--c:${scoreColor(overall)}">${pct(overall)}</span>`;
 
 async function runHumanize() {
   if (state.busy === "humanize") {
@@ -405,9 +412,45 @@ async function runHumanize() {
   updateButtons();
   const view = runView();
   const opts = options();
-  let liveText = "";
-  let caret = null;
   const stepFor = {};
+  const versions = []; // index = pass number; 0 is the original
+
+  // The panel shows either the draft being written ("live") or a finished version the user clicked.
+  let liveText = "";
+  let livePass = null;
+  let streaming = false;
+  let viewing = null;
+  const caret = Object.assign(document.createElement("span"), { className: "caret" });
+
+  const markViewing = () => {
+    for (const el of view.steps.querySelectorAll(".step[data-pass]")) el.classList.toggle("viewing", Number(el.dataset.pass) === viewing);
+  };
+  const showLive = () => {
+    viewing = null;
+    markViewing();
+    view.back.hidden = true;
+    view.liveTitle.textContent = livePass === 1 ? "Rewriting" : `Revision pass ${livePass}`;
+    view.liveMeta.textContent = `${countWords(liveText).toLocaleString()} words`;
+    view.live.replaceChildren(liveText, ...(streaming ? [caret] : []));
+    view.live.scrollTop = view.live.scrollHeight;
+  };
+  const showVersion = (pass) => {
+    const v = versions[pass];
+    if (!v) return;
+    viewing = pass;
+    markViewing();
+    view.liveWrap.hidden = false;
+    view.back.hidden = !streaming;
+    view.liveTitle.textContent = pass === 0 ? "Original" : `Pass ${pass} draft`;
+    view.liveMeta.textContent = `${pct(v.analysis.overall)} AI · ${v.analysis.words.toLocaleString()} words`;
+    view.live.replaceChildren(v.text);
+    view.live.scrollTop = 0;
+  };
+  view.steps.addEventListener("click", (e) => {
+    const chip = e.target.closest(".step[data-pass]");
+    if (chip) showVersion(Number(chip.dataset.pass));
+  });
+  view.back.addEventListener("click", showLive);
 
   try {
     const res = await fetch("/api/humanize", {
@@ -424,29 +467,39 @@ async function runHumanize() {
     for await (const { event, data } of readSSE(res.body)) {
       switch (event) {
         case "stage": {
-          if (data.stage === "rewriting") {
+          if (data.stage === "analyzing") {
+            stepFor[0] = addStep(view, data.message);
+          } else if (data.stage === "rewriting") {
             stepFor[data.pass] = addStep(view, data.pass === 1 ? "Pass 1: rewriting" : `Pass ${data.pass}: revising`);
             liveText = "";
+            livePass = data.pass;
+            streaming = true;
             view.liveWrap.hidden = false;
-            view.liveTitle.textContent = data.pass === 1 ? "Rewriting" : `Revision pass ${data.pass}`;
-            view.liveMeta.textContent = "";
-            view.live.textContent = "";
-            caret = document.createElement("span");
-            caret.className = "caret";
-            view.live.append(caret);
+            // Keep a version the user is reading on screen; they can jump back to the live draft.
+            if (viewing === null) showLive();
+            else view.back.hidden = false;
           } else if (data.stage === "scoring") {
             stepFor[data.pass].querySelector(".label").textContent = `Pass ${data.pass}: scoring`;
-            caret?.remove();
+            streaming = false;
+            caret.remove();
+            view.back.hidden = true;
           } else {
             addStep(view, data.message);
           }
           break;
         }
-        case "before":
+        case "before": {
+          versions[0] = { pass: 0, text: original, analysis: data.analysis };
           view.head.innerHTML = scoreCard(data.analysis, " · original");
+          const chip = stepFor[0];
+          chip.classList.replace("active", "done");
+          chip.dataset.pass = "0";
+          chip.innerHTML = scoreChip("Original", data.analysis.overall);
           break;
+        }
         case "delta": {
           liveText += data.text;
+          if (viewing !== null) break;
           caret.before(data.text);
           view.liveMeta.textContent = `${countWords(liveText).toLocaleString()} words`;
           const box = view.live;
@@ -454,19 +507,22 @@ async function runHumanize() {
           break;
         }
         case "draft": {
-          const s = data.analysis.overall;
+          versions[data.pass] = { pass: data.pass, text: data.text, analysis: data.analysis };
           const el = stepFor[data.pass];
           el.classList.replace("active", "done");
+          el.dataset.pass = String(data.pass);
           if (data.best) {
             view.steps.querySelector(".step.best")?.classList.remove("best");
             el.classList.add("best");
           }
-          el.innerHTML = `Pass ${data.pass} <span class="score" style="--c:${scoreColor(s)}">${pct(s)}</span>`;
+          el.innerHTML = scoreChip(`Pass ${data.pass}`, data.analysis.overall);
           el.title = data.analysis.detectors.filter((d) => !d.error).map((d) => `${d.name}: ${pct(d.score * 100)}`).join(" · ");
+          view.hint.hidden = false;
+          markViewing();
           break;
         }
         case "done":
-          renderResult(original, data);
+          renderResult(original, data, versions);
           break;
         case "error":
           throw new Error(data.message);
@@ -486,18 +542,22 @@ async function runHumanize() {
   }
 }
 
-function fidelityBox(r) {
-  if (r.fidelity === null) {
-    return r.bestPass === 0
-      ? ""
-      : `<div class="fidelity warn"><div class="head">Meaning check didn't run</div><div class="note">${esc(r.fidelityError ?? "")} Compare the Changes tab by eye.</div></div>`;
+// state: undefined (not run), "loading", { fidelity }, or { error }
+function fidelityBox(state) {
+  if (state === undefined) {
+    return `<div class="fidelity"><div class="head">Meaning check hasn't run for this draft</div>
+      <div class="note">The rewrite checks the best-scoring draft automatically. <button class="linkish" data-act="check" type="button">Check this one</button></div></div>`;
   }
-  const issues = r.fidelity.issues;
+  if (state === "loading") return `<div class="fidelity"><div class="head"><span class="spinner inline"></span> Checking that the meaning survived…</div></div>`;
+  if (state.error) {
+    return `<div class="fidelity warn"><div class="head">Meaning check didn't run</div><div class="note">${esc(state.error)} Compare the Changes tab by eye. <button class="linkish" data-act="check" type="button">Try again</button></div></div>`;
+  }
+  const { summary, issues } = state.fidelity;
   if (!issues.length) {
-    return `<div class="fidelity ok"><div class="head">Meaning check passed</div><div class="note">${esc(r.fidelity.summary)}</div></div>`;
+    return `<div class="fidelity ok"><div class="head">Meaning check passed</div><div class="note">${esc(summary)}</div></div>`;
   }
   return `<div class="fidelity warn"><div class="head">Meaning check: ${issues.length} thing${issues.length === 1 ? "" : "s"} to look at</div>
-    <div class="note">${esc(r.fidelity.summary)}</div>
+    <div class="note">${esc(summary)}</div>
     <ul>${issues
       .map(
         (i) => `<li><span class="kind">${esc(i.kind)}</span>${esc(i.note)}<br>
@@ -587,22 +647,22 @@ function copyButton(getText) {
   return btn;
 }
 
-function renderResult(original, r) {
-  const { before, after } = r;
-  const improved = r.bestPass > 0;
-  const drop = before.overall - after.overall;
+function renderResult(original, r, drafts = []) {
+  const { before } = r;
+  // Every version from the run; the best draft carries the final (full) analysis.
+  const versions = [{ pass: 0, text: original, analysis: before }];
+  for (const v of drafts.slice(1)) if (v) versions.push(v.pass === r.bestPass ? { ...v, analysis: r.after } : v);
+  const byPass = new Map(versions.map((v) => [v.pass, v]));
+  const fidelity = new Map(); // pass -> "loading" | { fidelity } | { error }
+  if (r.bestPass > 0) fidelity.set(r.bestPass, r.fidelity ? { fidelity: r.fidelity } : { error: r.fidelityError ?? "It didn't run." });
+  let selected = r.bestPass;
+  let tab = "text";
+  const sel = () => byPass.get(selected);
+
   els.report.innerHTML = `
-    <div class="compare">
-      <div>${gauge(before.overall, { size: "sm" })}<div class="label">Before</div></div>
-      <div class="arrow">→</div>
-      <div>${gauge(after.overall, { size: "sm" })}<div class="label">After</div></div>
-      <div class="summary">
-        <div class="verdict">${improved ? esc(after.verdict) : "Couldn't beat the original"}</div>
-        <div class="sub">${improved ? `${drop >= 0 ? "Down" : "Up"} ${Math.abs(Math.round(drop))} points · best draft from pass ${r.bestPass}` : "Every draft scored worse than the original, so it's unchanged."}
-          · ${r.usage.input.toLocaleString()} in / ${r.usage.output.toLocaleString()} out tokens</div>
-      </div>
-    </div>
-    ${fidelityBox(r)}
+    <div class="compare"></div>
+    <div><div class="section-title">Versions <span class="meta">click to compare</span></div><div class="steps versions"></div></div>
+    <div class="fidelity-slot"></div>
     <div class="tabs" role="tablist">
       <button role="tab" data-tab="text" aria-selected="true">Rewritten</button>
       <button role="tab" data-tab="diff" aria-selected="false">Changes</button>
@@ -613,54 +673,117 @@ function renderResult(original, r) {
     <div class="out-actions">
       <button class="primary" data-act="copy" type="button">Copy</button>
       <button class="secondary" data-act="download" type="button">Download .md</button>
-      <button class="secondary" data-act="use" type="button" title="Put the rewrite in the editor so you can tweak it or run another round">Edit / run again</button>
+      <button class="secondary" data-act="use" type="button" title="Put this version in the editor so you can tweak it or run another round">Edit / run again</button>
     </div>`;
 
-  const body = els.report.querySelector(".tab-body");
+  const q = (selector) => els.report.querySelector(selector);
+  q(".versions").innerHTML = versions
+    .map(
+      (v) => `<button type="button" class="step done clickable${v.pass === r.bestPass && v.pass > 0 ? " best" : ""}" data-pass="${v.pass}" title="${esc(
+        v.analysis.detectors.filter((d) => !d.error).map((d) => `${d.name}: ${pct(d.score * 100)}`).join(" · "),
+      )}">${scoreChip(v.pass === 0 ? "Original" : `Pass ${v.pass}`, v.analysis.overall)}${v.pass === r.bestPass && v.pass > 0 ? ' <span class="badge">best</span>' : ""}</button>`,
+    )
+    .join("");
+
   const tabs = {
     text() {
       const el = document.createElement("div");
       el.className = "article";
-      el.append(copyButton(() => r.text), r.text);
+      el.append(copyButton(() => sel().text), sel().text);
       return el;
     },
-    diff: () => diffView(original, r.text),
-    heat: () => heatmap(r.text, after.sentences),
+    diff() {
+      if (selected === 0) return Object.assign(document.createElement("p"), { className: "note", textContent: "This is the original, so there are no changes to show." });
+      return diffView(original, sel().text);
+    },
+    heat: () => heatmap(sel().text, sel().analysis.sentences),
     detail() {
       const el = document.createElement("div");
-      el.innerHTML = `<div class="section-title">After</div><div class="detectors">${detectorRows(after)}</div>
-        <div class="section-title" style="margin-top:18px">Before</div><div class="detectors">${detectorRows(before)}</div>
-        <div class="section-title" style="margin-top:18px">Style signals after</div><div class="signals">${signalCards(after)}</div>`;
+      el.innerHTML = `<div class="section-title">${selected === 0 ? "Original" : `Pass ${selected}`}</div><div class="detectors">${detectorRows(sel().analysis)}</div>
+        ${selected === 0 ? "" : `<div class="section-title" style="margin-top:18px">Original</div><div class="detectors">${detectorRows(before)}</div>`}
+        <div class="section-title" style="margin-top:18px">Style signals</div><div class="signals">${signalCards(sel().analysis)}</div>`;
       return el;
     },
   };
-  const show = (name) => {
-    for (const b of els.report.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
-    body.replaceChildren(tabs[name]());
+
+  const update = () => {
+    const v = sel();
+    const a = v.analysis;
+    const drop = before.overall - a.overall;
+    const note =
+      selected === 0
+        ? r.bestPass === 0
+          ? "No draft scored better than the original. Click a pass above to read it anyway."
+          : "The original, as you pasted it."
+        : `${drop >= 0 ? "Down" : "Up"} ${Math.abs(Math.round(drop))} points from the original${selected === r.bestPass ? " · best score this run" : ""}`;
+    q(".compare").innerHTML = `
+      <div>${gauge(before.overall, { size: "sm" })}<div class="label">Original</div></div>
+      <div class="arrow">→</div>
+      <div>${gauge(a.overall, { size: "sm" })}<div class="label">${selected === 0 ? "Original" : `Pass ${selected}`}</div></div>
+      <div class="summary">
+        <div class="verdict">${esc(a.verdict)}</div>
+        <div class="sub">${note}${a.lead ? ` · strongest signal: ${esc(a.lead.name)} ${pct(a.lead.score)}` : ""}
+          <br>This run: ${r.usage.input.toLocaleString()} in / ${r.usage.output.toLocaleString()} out tokens</div>
+      </div>`;
+    for (const b of q(".versions").querySelectorAll("[data-pass]")) b.setAttribute("aria-pressed", String(Number(b.dataset.pass) === selected));
+    q(".fidelity-slot").innerHTML = selected === 0 ? "" : fidelityBox(fidelity.get(selected));
+    q('.tabs [data-tab="text"]').textContent = selected === 0 ? "Text" : "Rewritten";
+    for (const b of q(".tabs").querySelectorAll("button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+    q(".tab-body").replaceChildren(tabs[tab]());
   };
-  els.report.querySelector(".tabs").addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-tab]");
-    if (b) show(b.dataset.tab);
+
+  const checkMeaning = async (pass) => {
+    fidelity.set(pass, "loading");
+    update();
+    try {
+      const res = await fetch("/api/fidelity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ original, rewrite: byPass.get(pass).text }),
+      });
+      const data = await res.json();
+      fidelity.set(pass, res.ok ? { fidelity: data.fidelity } : { error: data.error ?? res.statusText });
+    } catch (err) {
+      fidelity.set(pass, { error: err.message });
+    }
+    if (selected === pass) update();
+  };
+
+  q(".versions").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-pass]");
+    if (!b) return;
+    selected = Number(b.dataset.pass);
+    update();
   });
-  els.report.querySelector(".out-actions").addEventListener("click", async (e) => {
+  q(".fidelity-slot").addEventListener("click", (e) => {
+    if (e.target.closest('[data-act="check"]')) checkMeaning(selected);
+  });
+  q(".tabs").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-tab]");
+    if (!b) return;
+    tab = b.dataset.tab;
+    update();
+  });
+  q(".out-actions").addEventListener("click", async (e) => {
     const act = e.target.closest("button")?.dataset.act;
+    const v = sel();
     if (act === "copy") {
-      if (await copyText(r.text)) toast("Copied.");
+      if (await copyText(v.text)) toast("Copied.");
     } else if (act === "download") {
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([r.text], { type: "text/markdown" }));
-      a.download = "article.ai-less.md";
+      a.href = URL.createObjectURL(new Blob([v.text], { type: "text/markdown" }));
+      a.download = selected === 0 ? "article.md" : `article.ai-less.pass${selected}.md`;
       a.click();
       URL.revokeObjectURL(a.href);
     } else if (act === "use") {
-      els.input.value = r.text;
-      store.set("text", r.text);
+      els.input.value = v.text;
+      store.set("text", v.text);
       updateWordCount();
-      renderAnalysis(r.text, after);
-      toast("Rewrite moved into the editor.");
+      renderAnalysis(v.text, v.analysis);
+      toast(selected === 0 ? "Original is in the editor." : `Pass ${selected} moved into the editor.`);
     }
   });
-  show("text");
+  update();
 }
 
 // ---------- file drop ----------

@@ -282,6 +282,14 @@ sup.mk:hover, sup.mk.focus { background: rgb(var(--heat-rgb)); color: #fff; }
 .step.done { color: var(--ink-2); }
 .step .score { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--c); }
 .step.best { border-color: var(--good); }
+.step[data-pass] { cursor: pointer; }
+.step[data-pass]:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 30%, var(--line)); }
+.step.viewing, .step[aria-pressed="true"] { color: var(--ink); background: var(--panel); border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+button.step { font: inherit; font-size: 13px; }
+.badge { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--good); }
+.linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.section-title .linkish { text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 12.5px; }
+.spinner.inline { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin-right: 6px; }
 
 .live { max-height: 62vh; overflow: auto; }
 .live .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--ink); vertical-align: text-bottom; animation: pulse 1s steps(2) infinite; margin-left: 1px; }

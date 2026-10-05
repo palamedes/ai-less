@@ -56,10 +56,10 @@ The op-ed rows are the honest limit of local detection. Pangram's production det
 
 ## How the rewrite works
 
-1. The original is scored with every enabled detector.
+1. The original is scored with every enabled detector, or the earlier result is reused if you already clicked Analyze. Analyses are cached by text and detector set, so nothing is scored twice.
 2. Claude rewrites the full article. The prompt is an editing guide (`server/prompts.ts`) that covers what detectors key on and what must survive the edit: every claim, number, quote, and link; point of view; register; structure. It also gets the detector findings: the worst sentences, the stock phrases found, and which style signals are off.
 3. The draft is re-scored with the fast local detectors. If it's still above your target, a revision pass goes back with the sentences that still flag and asks for structural changes there, not just word swaps.
-4. Steps 2–3 repeat up to *Max passes*. The best-scoring draft wins.
+4. Steps 2–3 repeat up to *Max passes*. The best-scoring draft is selected, but every version is kept. Click any pass in the progress row, during the run or after it, to read it, see its changes, heatmap and detector scores, run a meaning check on it, or copy it.
 5. A meaning check compares the result against the original. It lists anything dropped, added, changed, or any drift in voice. The final draft is then scored with the full detector set.
 
 The rewrite streams into the page as it's written. **Intensity** controls how far it goes:

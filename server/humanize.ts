@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { analyze, type Analysis } from "./analyze.ts";
+import { cachedAnalysis, cachedAnalyze, type Analysis } from "./analyze.ts";
 import type { Usage } from "./backends/types.ts";
 import { PipelineError } from "./claude.ts";
 import { config } from "./config.ts";
@@ -91,18 +91,6 @@ class RewriteExtractor {
   }
 }
 
-// Analyses are cached so "Analyze" followed by "De-AI it" doesn't pay for the same work twice.
-const cache = new Map<string, Analysis>();
-export async function cachedAnalyze(text: string, mode: "full" | "fast", judge: boolean, signal?: AbortSignal) {
-  const key = `${mode}:${judge}:${text}`;
-  const hit = cache.get(key);
-  if (hit) return hit;
-  const result = await analyze(text, { mode, judge, signal });
-  cache.set(key, result);
-  if (cache.size > 24) cache.delete(cache.keys().next().value!);
-  return result;
-}
-
 export async function humanize(
   original: string,
   opts: HumanizeOptions,
@@ -116,7 +104,8 @@ export async function humanize(
     usage.cacheRead += u.cacheRead;
   };
 
-  await emit({ type: "stage", stage: "analyzing", message: "Scoring the original" });
+  const reuse = cachedAnalysis(original, "full", opts.judge) !== undefined;
+  await emit({ type: "stage", stage: "analyzing", message: reuse ? "Using your earlier analysis" : "Scoring the original" });
   const before = await cachedAnalyze(original, "full", opts.judge, signal);
   await emit({ type: "before", analysis: before });
 
@@ -187,7 +176,7 @@ export async function humanize(
   });
 }
 
-async function checkFidelity(original: string, rewrite: string, signal?: AbortSignal) {
+export async function checkFidelity(original: string, rewrite: string, signal?: AbortSignal) {
   const { data, usage } = await llm().json({
     system: FIDELITY_SYSTEM,
     prompt: fidelityPrompt(original, rewrite),
