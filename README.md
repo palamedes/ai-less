@@ -7,12 +7,19 @@ It runs locally: a small Node server plus a single-page UI in your browser.
 ## Quick start
 
 ```sh
-npm install
-ant auth login            # or put ANTHROPIC_API_KEY in .env (see .env.example)
-npm start                 # http://127.0.0.1:5177
+ant auth login            # once; or put ANTHROPIC_API_KEY in .env (see .env.example)
+./ai-less                 # serves http://127.0.0.1:5177 and opens it in your browser
 ```
 
-Requires Node 23.6 or newer, which runs the TypeScript directly with no build step. On first launch it downloads a ~500 MB detector model from Hugging Face into `.cache/models/`.
+```sh
+./ai-less --port 9000 --no-browser
+./ai-less --help
+ln -s "$PWD/ai-less" ~/.local/bin/ai-less    # run it from anywhere
+```
+
+The first run installs the npm dependencies, and the launcher reinstalls them whenever `package-lock.json` changes. The detector model (~500 MB) downloads from Hugging Face into `.cache/models/` on first launch. If ai-less is already running, `./ai-less` just opens the page again. Ctrl+C stops it.
+
+Requires Node 23.6 or newer, which runs the TypeScript directly with no build step. For development, `npm run dev` restarts the server on file changes without opening a browser.
 
 Scoring works without Claude. Rewriting needs it.
 

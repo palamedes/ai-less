@@ -9,6 +9,8 @@ import {
   type PreTrainedTokenizer,
   type Tensor,
 } from "@huggingface/transformers";
+import fs from "node:fs";
+import path from "node:path";
 import { config } from "../config.ts";
 import { documentChunks, slidingWindows, type Chunk } from "../text.ts";
 import type { Detection, Detector } from "./types.ts";
@@ -46,6 +48,9 @@ class LocalClassifier {
   load() {
     this.loading ??= (async () => {
       this.status = "loading";
+      if (!fs.existsSync(path.join(config.modelCacheDir, this.spec.repo))) {
+        console.log(`[local] downloading ${this.spec.name} from Hugging Face (first run only, a few hundred MB)…`);
+      }
       try {
         const [tokenizer, model] = await Promise.all([
           AutoTokenizer.from_pretrained(this.spec.repo),

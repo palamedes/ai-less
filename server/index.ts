@@ -1,4 +1,6 @@
+import { spawn } from "node:child_process";
 import path from "node:path";
+import { parseArgs } from "node:util";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -9,6 +11,42 @@ import { config, ROOT } from "./config.ts";
 import { externalDetectors } from "./detectors/external.ts";
 import { classifiers, warmUp } from "./detectors/local-models.ts";
 import { cachedAnalyze, humanize } from "./humanize.ts";
+
+const USAGE = `Usage: ai-less [--port N] [--host ADDR] [--no-browser]
+
+Score how AI-generated an article reads, then rewrite it to read human.
+
+  --port N       port for the local web page (default: ${config.port})
+  --host ADDR    address to listen on (default: ${config.host}); 0.0.0.0 lets other devices on your network in
+  --no-browser   don't open the page in a browser
+  -h, --help     show this help`;
+
+let cli;
+try {
+  cli = parseArgs({
+    options: {
+      port: { type: "string" },
+      host: { type: "string" },
+      "no-browser": { type: "boolean", default: false },
+      help: { type: "boolean", short: "h", default: false },
+    },
+  }).values;
+} catch (err) {
+  console.error(`${(err as Error).message}\n\n${USAGE}`);
+  process.exit(1);
+}
+if (cli.help) {
+  console.log(USAGE);
+  process.exit(0);
+}
+if (cli.port !== undefined) {
+  config.port = Number(cli.port);
+  if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
+    console.error(`--port must be a number between 1 and 65535, not "${cli.port}"`);
+    process.exit(1);
+  }
+}
+if (cli.host) config.host = cli.host;
 
 const MAX_CHARS = 60_000;
 // Not trimmed: sentence offsets returned to the browser index into the exact text it sent.
@@ -87,9 +125,40 @@ const diffBundle = path.relative(process.cwd(), path.join(ROOT, "node_modules/di
 app.get("/vendor/diff.min.js", serveStatic({ path: diffBundle }));
 app.use("/*", serveStatic({ root: publicDir }));
 
-serve({ fetch: app.fetch, port: config.port, hostname: config.host }, ({ port }) => {
-  console.log(`ai-less running at http://${config.host === "0.0.0.0" ? "localhost" : config.host}:${port}`);
-});
+function openBrowser(url: string) {
+  const [cmd, ...args] =
+    process.platform === "darwin" ? ["open", url] : process.platform === "win32" ? ["cmd", "/c", "start", "", url] : ["xdg-open", url];
+  const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+  child.on("error", () => console.log(`Open ${url} in your browser.`));
+  child.unref();
+}
 
-warmUp();
-probeClaude().then((s) => console.log(s.ok ? `[claude] connected (${s.model})` : `[claude] not connected: ${s.error}`));
+async function alreadyRunning(url: string) {
+  try {
+    const res = await fetch(`${url}api/status`, { signal: AbortSignal.timeout(1500) });
+    return res.ok && "claude" in ((await res.json()) as object);
+  } catch {
+    return false;
+  }
+}
+
+const local = ["127.0.0.1", "localhost"].includes(config.host);
+const url = `http://${local ? config.host : "127.0.0.1"}:${config.port}/`;
+
+if (await alreadyRunning(url)) {
+  console.log(`ai-less is already running at ${url}`);
+  if (!cli["no-browser"]) openBrowser(url);
+  process.exit(0);
+}
+
+const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, () => {
+  console.log(`ai-less is running at ${url}\nPress Ctrl+C to stop.`);
+  if (!cli["no-browser"]) openBrowser(url);
+  warmUp();
+  probeClaude().then((s) => console.log(s.ok ? `[claude] connected (${s.model})` : `[claude] not connected: ${s.error}`));
+});
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code !== "EADDRINUSE") throw err;
+  console.error(`Port ${config.port} is already in use. Try another one, e.g. --port ${config.port + 1}`);
+  process.exit(1);
+});

@@ -8,8 +8,8 @@
     "node": ">=23.6"
   },
   "scripts": {
-    "start": "node --env-file-if-exists=.env server/index.ts",
-    "dev": "node --env-file-if-exists=.env --watch server/index.ts",
+    "start": "./ai-less",
+    "dev": "node --env-file-if-exists=.env --watch-path=server server/index.ts --no-browser",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
