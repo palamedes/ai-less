@@ -256,16 +256,22 @@ kbd { font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line)
 }
 .sent { border-radius: 3px; background: rgb(var(--hot) / var(--heat, 0)); transition: background 0.15s; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .sent.hot { box-shadow: inset 0 -2px 0 rgb(var(--hot) / 0.55); }
-.sent[data-score]:hover { background: rgb(var(--hot) / 0.55); cursor: default; }
-
-.tip {
-  position: fixed; z-index: 50; max-width: 320px; pointer-events: none;
-  background: var(--ink); color: var(--bg);
-  border-radius: 9px; padding: 8px 11px; font-size: 12.5px; line-height: 1.4;
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+.sent.focus { background: rgb(var(--hot) / 0.55); }
+sup.mk { font: 700 0.62em var(--ui); color: rgb(var(--hot)); line-height: 0; margin: 0 1px 0 2px; }
+.hm-notes {
+  white-space: normal;
+  font: 12.5px/1.45 var(--ui);
+  margin: 8px 0 2px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid rgb(var(--hot) / 0.35);
+  display: grid;
+  gap: 2px;
 }
-.tip strong { font-size: 13px; }
-.tip ul { margin: 4px 0 0; padding-left: 16px; }
+.hm-note { display: flex; gap: 8px; align-items: baseline; padding: 2px 6px; margin-left: -6px; border-radius: 6px; }
+.hm-note.focus { background: rgb(var(--hot) / 0.12); }
+.hm-note .n { font-weight: 700; color: rgb(var(--hot)); min-width: 1.3em; font-variant-numeric: tabular-nums; }
+.hm-note .p { font-weight: 700; color: var(--c); min-width: 2.7em; font-variant-numeric: tabular-nums; }
+.hm-note .why { color: var(--muted); }
 
 /* ---------- rewrite run ---------- */
 .steps { display: flex; flex-wrap: wrap; gap: 8px; }

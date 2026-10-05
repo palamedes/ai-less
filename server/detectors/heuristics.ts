@@ -215,7 +215,10 @@ export function analyzeStyle(sentences: Sentence[]): Detection {
     }
     const dashes = s.text.match(EM_DASH)?.length ?? 0;
     emDashes += dashes;
-    if (dashes) points += 0.5 * dashes;
+    if (dashes) {
+      points += 0.5 * dashes;
+      notes.push(dashes > 1 ? `${dashes} em-dashes` : "em-dash");
+    }
 
     sentenceScores[s.index] = 1 - Math.exp(-points / 3);
     if (notes.length) sentenceNotes[s.index] = notes;

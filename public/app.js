@@ -18,7 +18,6 @@ const els = {
   analyzeBtn: $("#analyzeBtn"),
   humanizeBtn: $("#humanizeBtn"),
   report: $("#report"),
-  tip: $("#tip"),
   toast: $("#toast"),
 };
 
@@ -231,26 +230,70 @@ function heat(score) {
   return Math.max(0, (score - 0.3) / 0.7) * 0.42;
 }
 
+const flagged = (s) => s.score !== null && (s.score >= 0.5 || (s.notes.length > 0 && s.score >= 0.35));
+
+// The article with each sentence shaded by its AI score. Flagged sentences get a
+// number, and each paragraph is followed by its notes: the score and the reasons.
 function heatmap(text, sentences) {
   const root = document.createElement("div");
   root.className = "article heatmap";
   let pos = 0;
-  for (const s of sentences) {
-    if (s.start < pos) continue;
-    if (s.start > pos) root.append(text.slice(pos, s.start));
+  let n = 0;
+  let pending = []; // notes for the paragraph in progress
+  let afterNotes = false;
+
+  const gap = (to) => {
+    let chunk = text.slice(pos, to);
+    // A notes block already ends the line, so drop one newline to keep paragraph spacing even.
+    if (afterNotes) chunk = chunk.replace(/^\n/, "");
+    afterNotes = false;
+    if (chunk) root.append(chunk);
+  };
+
+  sentences.forEach((s, i) => {
+    if (s.start < pos) return;
+    gap(s.start);
     const span = document.createElement("span");
     span.className = "sent";
     span.textContent = text.slice(s.start, s.end);
     if (s.score !== null) {
       span.style.setProperty("--heat", heat(s.score).toFixed(3));
-      span.dataset.score = String(s.score);
-      if (s.notes.length) span.dataset.notes = JSON.stringify(s.notes);
       if (s.score >= 0.6) span.classList.add("hot");
     }
     root.append(span);
+    if (flagged(s)) {
+      n++;
+      span.dataset.i = String(n);
+      root.append(Object.assign(document.createElement("sup"), { className: "mk", textContent: String(n) }));
+      pending.push({ n, s });
+    }
     pos = s.end;
-  }
-  root.append(text.slice(pos));
+
+    const next = sentences[i + 1];
+    if (pending.length && (!next || next.paragraph !== s.paragraph)) {
+      const box = document.createElement("div");
+      box.className = "hm-notes";
+      box.innerHTML = pending
+        .map(({ n, s }) => {
+          const v = s.score * 100;
+          const why = s.notes.length ? s.notes.map(esc).join(" · ") : "classifier only, no specific tell";
+          return `<div class="hm-note" data-i="${n}"><span class="n">${n}</span><span class="p" style="--c:${scoreColor(v)}">${pct(v)}</span><span class="why">${why}</span></div>`;
+        })
+        .join("");
+      root.append(box);
+      pending = [];
+      afterNotes = true;
+    }
+  });
+  gap(text.length);
+
+  // Hovering a note lights up its sentence, and the other way round.
+  const link = (e, on) => {
+    const i = e.target.closest?.("[data-i]")?.dataset.i;
+    if (i) for (const el of root.querySelectorAll(`[data-i="${i}"]`)) el.classList.toggle("focus", on);
+  };
+  root.addEventListener("mouseover", (e) => link(e, true));
+  root.addEventListener("mouseout", (e) => link(e, false));
   return root;
 }
 
@@ -267,7 +310,7 @@ function analysisBlocks(text, analysis) {
   wrap.innerHTML = `
     <div><div class="section-title">Detectors</div><div class="detectors">${detectorRows(analysis)}</div></div>
     ${analysis.tells.length ? `<div><div class="section-title">Stock phrases</div><div class="chips">${analysis.tells.map((t) => `<span class="chip">${esc(t.phrase)}${t.count > 1 ? `<b>×${t.count}</b>` : ""}</span>`).join("")}</div></div>` : ""}
-    <div><div class="section-title">Sentence heatmap <span class="meta legend">human <span class="ramp"></span> AI · hover for why</span></div><div class="hm-slot"></div></div>
+    <div><div class="section-title">Sentence heatmap <span class="meta legend">human <span class="ramp"></span> AI</span></div><div class="hm-slot"></div></div>
     <div><div class="section-title">Style signals</div><div class="signals">${signalCards(analysis)}</div></div>`;
   wrap.querySelector(".hm-slot").replaceWith(heatmap(text, analysis.sentences));
   frag.append(...wrap.children);
@@ -278,28 +321,6 @@ function renderAnalysis(text, analysis) {
   els.report.innerHTML = scoreCard(analysis);
   els.report.append(analysisBlocks(text, analysis));
 }
-
-// ---------- tooltip for heatmap ----------
-
-document.addEventListener("mouseover", (e) => {
-  const span = e.target.closest?.(".sent[data-score]");
-  if (!span) {
-    els.tip.hidden = true;
-    return;
-  }
-  const score = Number(span.dataset.score) * 100;
-  const notes = span.dataset.notes ? JSON.parse(span.dataset.notes) : [];
-  els.tip.innerHTML = `<strong>${pct(score)} AI-like</strong>${notes.length ? `<ul>${notes.slice(0, 6).map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}`;
-  els.tip.hidden = false;
-});
-document.addEventListener("mousemove", (e) => {
-  if (els.tip.hidden) return;
-  const pad = 14;
-  const { innerWidth: w, innerHeight: h } = window;
-  const r = els.tip.getBoundingClientRect();
-  els.tip.style.left = `${Math.min(e.clientX + pad, w - r.width - 8)}px`;
-  els.tip.style.top = `${e.clientY + pad + r.height > h ? e.clientY - r.height - pad : e.clientY + pad}px`;
-});
 
 // ---------- analyze ----------
 
