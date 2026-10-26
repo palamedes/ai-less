@@ -17,6 +17,7 @@ const els = {
   voiceBox: $("#voiceBox"),
   analyzeBtn: $("#analyzeBtn"),
   humanizeBtn: $("#humanizeBtn"),
+  interviewBtn: $("#interviewBtn"),
   report: $("#report"),
   tip: $("#tip"),
   toast: $("#toast"),
@@ -175,6 +176,7 @@ function updateButtons() {
     els.humanizeBtn.classList.remove("stop");
     els.humanizeBtn.title = claudeOk ? "" : "Claude isn't connected. See the banner above.";
   }
+  els.interviewBtn.disabled = state.busy !== null || !claudeOk;
 }
 
 // ---------- rendering: analysis ----------
@@ -184,7 +186,8 @@ function emptyView() {
     <h3>Drop in an article.</h3>
     <ol>
       <li><b>Analyze</b> scores how AI-generated it reads and highlights the sentences that give it away.</li>
-      <li><b>De-AI it</b> has Claude rewrite it, re-scores each draft, and revises the passages that still flag until it hits your target.</li>
+      <li><b>De-AI it</b> has Claude rewrite it, re-scores each draft, and revises the passages that still flag until it hits your target. It strips the obvious tells, but Pangram and GPTZero still catch AI wording however it's rewritten.</li>
+      <li><b>Interview</b> walks you through the article section by section with questions, and you rewrite it in your own words. Your sentences are what read as human to the strongest detectors.</li>
       <li>A final check compares the rewrite to your original so nothing gets added, dropped, or changed.</li>
     </ol>
     <p class="fine">Scores come from local classifiers (Pangram's open EditLens model and a RAID-trained RoBERTa), style heuristics, optionally Claude's own read, and any commercial detectors you add keys for. No detector is perfect, and they often disagree, so treat the number as an estimate and check final drafts with the detector you care about.</p>
@@ -315,6 +318,7 @@ function analysisBlocks(text, analysis) {
 }
 
 function renderAnalysis(text, analysis) {
+  state.analysis = { text, analysis };
   els.report.innerHTML = scoreCard(analysis);
   els.report.append(analysisBlocks(text, analysis));
 }
@@ -786,6 +790,271 @@ function renderResult(original, r, drafts = []) {
   update();
 }
 
+// ---------- interview mode ----------
+// The author rewrites the article in their own words, section by section. Their text replaces
+// the AI text exactly as written; the tool never rewords it.
+
+function hashText(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16);
+}
+
+// Share of the author's word triples that also appear in the AI draft: copying or lightly
+// paraphrasing the draft brings its wording, and its detectability, straight back.
+function draftOverlap(mine, draft) {
+  const grams = (t) => {
+    const w = t.toLowerCase().match(/[\p{L}\p{N}'’]+/gu) ?? [];
+    const out = new Set();
+    for (let i = 0; i + 2 < w.length; i++) out.add(`${w[i]} ${w[i + 1]} ${w[i + 2]}`);
+    return out;
+  };
+  const a = grams(mine);
+  const b = grams(draft);
+  if (!a.size) return 0;
+  let hits = 0;
+  for (const g of a) if (b.has(g)) hits++;
+  return hits / a.size;
+}
+
+// Average sentence score of a section, from an earlier analysis of the same article.
+function sectionScore(original, sectionText) {
+  if (state.analysis?.text !== original) return null;
+  const start = original.indexOf(sectionText);
+  if (start < 0) return null;
+  const end = start + sectionText.length;
+  const inside = state.analysis.analysis.sentences.filter((s) => s.start >= start && s.end <= end && s.score !== null);
+  return inside.length ? (100 * inside.reduce((a, s) => a + s.score, 0)) / inside.length : null;
+}
+
+async function runInterview({ regenerate = false } = {}) {
+  const original = els.input.value;
+  if (!original.trim()) return toast("Paste an article first.");
+  const key = `iv:${hashText(original)}`;
+  const saved = store.get(key, null);
+  if (saved?.plan && !regenerate) return renderInterview(original, saved.plan, key);
+
+  state.busy = "interview";
+  updateButtons();
+  loadingView("Splitting it into sections and writing questions for you…");
+  try {
+    const res = await fetch("/api/interview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: original }),
+    });
+    const plan = await res.json();
+    if (!res.ok) throw new Error(plan.error ?? res.statusText);
+    store.set(key, { plan, answers: saved?.answers ?? {} });
+    renderInterview(original, plan, key);
+  } catch (err) {
+    errorView(err.message);
+  } finally {
+    state.busy = null;
+    updateButtons();
+  }
+}
+
+function renderInterview(original, plan, key) {
+  const answers = store.get(key, { plan, answers: {} }).answers ?? {};
+  const save = () => store.set(key, { plan, answers });
+  const sections = plan.sections;
+  // Sections without their own heading continue the one before: "Opening, continued".
+  const labels = new Map();
+  let current = "Opening";
+  for (const s of sections) {
+    if (s.heading) current = s.heading.replace(/^#+\s*/, "");
+    labels.set(s.id, s.heading || s.id === 1 ? current : `${current}, continued`);
+  }
+  const label = (s) => labels.get(s.id);
+
+  const root = document.createElement("div");
+  root.className = "iv";
+  root.innerHTML = `
+    <div class="iv-head">
+      <h3>Make it yours</h3>
+      <p class="note">Pangram and GPTZero detect AI wording itself, so the sections you write yourself are what read as human. For each section, cover the point in your own words. The questions are there to get you going; answer them, ignore them, or wander. Rough is fine, and anything you leave empty keeps the AI version.</p>
+      <div class="iv-progress"><div class="bar" style="--c:var(--good)"><i></i></div><span class="meta iv-progress-text"></span></div>
+      <div class="iv-tools"><button class="linkish" data-act="regen" type="button">New questions</button></div>
+    </div>
+    <div class="iv-sections">${sections
+      .map((s) => {
+        const ai = sectionScore(original, s.text);
+        return `<section class="iv-card" data-id="${s.id}">
+          <div class="iv-card-head"><span class="iv-num">${s.id}</span><span class="iv-label">${esc(label(s))}</span>${
+            ai === null ? "" : `<span class="iv-ai" style="--c:${scoreColor(ai)}" title="How AI-like this section of the original scored">${pct(ai)} AI</span>`
+          }</div>
+          ${s.point ? `<p class="iv-point"><b>The point:</b> ${esc(s.point)}</p>` : ""}
+          ${s.questions.length ? `<ul class="iv-q">${s.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : ""}
+          <textarea class="iv-text" rows="6" placeholder="Say it your way…"></textarea>
+          <div class="iv-foot">
+            <span class="iv-live meta"></span>
+            <button class="linkish" data-act="fix" type="button" title="Fix spelling and punctuation only">Fix typos</button>
+          </div>
+          <details class="iv-draft"><summary>Show the AI draft of this section</summary><div class="article">${esc(s.text)}</div><p class="note">Reading it is fine. Copying or lightly rewording it brings the AI back.</p></details>
+        </section>`;
+      })
+      .join("")}</div>
+    <div class="iv-assemble">
+      <button class="primary" data-act="assemble" type="button">Assemble the article</button>
+      <span class="meta">Your sections go in exactly as written; the rest keeps the AI text.</span>
+    </div>
+    <div class="iv-result"></div>`;
+  els.report.replaceChildren(root);
+
+  const q = (sel) => root.querySelector(sel);
+  const cards = new Map([...root.querySelectorAll(".iv-card")].map((el) => [Number(el.dataset.id), el]));
+  const scoreTimers = new Map();
+
+  const progress = () => {
+    let mine = 0;
+    let total = 0;
+    let done = 0;
+    for (const s of sections) {
+      const text = (answers[s.id] ?? "").trim();
+      if (text) {
+        done++;
+        mine += countWords(text);
+        total += countWords(text);
+      } else total += s.words;
+    }
+    const share = total ? (100 * mine) / total : 0;
+    q(".iv-progress .bar i").style.setProperty("--w", `${share.toFixed(1)}%`);
+    q(".iv-progress-text").textContent = `${done} of ${sections.length} sections in your words · about ${Math.round(share)}% of the article is yours`;
+  };
+
+  const live = (s) => {
+    const card = cards.get(s.id);
+    const text = (answers[s.id] ?? "").trim();
+    const out = card.querySelector(".iv-live");
+    card.classList.toggle("mine", Boolean(text));
+    if (!text) {
+      out.textContent = "";
+      return;
+    }
+    const own = 100 * (1 - draftOverlap(text, s.text));
+    const n = countWords(text);
+    out.innerHTML = `${n} words · <span style="color:${own >= 85 ? "var(--good)" : own >= 65 ? "var(--warn)" : "var(--bad)"}" title="Share of your wording that isn't lifted from the AI draft">${Math.round(own)}% your own wording</span>${
+      own < 65 ? " · close to the draft's wording, so detectors may still flag it" : ""
+    }<span class="iv-local"></span>`;
+    // A quick local AI check once there's enough to judge.
+    clearTimeout(scoreTimers.get(s.id));
+    if (n < 40) return;
+    scoreTimers.set(
+      s.id,
+      setTimeout(async () => {
+        try {
+          const res = await fetch("/api/score", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+          const data = await res.json();
+          if (!res.ok || (answers[s.id] ?? "").trim() !== text) return;
+          const slot = card.querySelector(".iv-local");
+          if (slot) slot.innerHTML = ` · <span style="color:${scoreColor(data.overall)}" title="Local detectors only (style tells and EditLens); Pangram is stricter">local check ${pct(data.overall)} AI</span>`;
+        } catch {}
+      }, 1200),
+    );
+  };
+
+  for (const s of sections) {
+    const card = cards.get(s.id);
+    const ta = card.querySelector(".iv-text");
+    ta.value = answers[s.id] ?? "";
+    ta.addEventListener("input", () => {
+      answers[s.id] = ta.value;
+      save();
+      live(s);
+      progress();
+    });
+    card.querySelector('[data-act="fix"]').addEventListener("click", async (e) => {
+      const text = ta.value.trim();
+      if (!text) return toast("Write something first.");
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = "Fixing…";
+      try {
+        const res = await fetch("/api/proofread", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? res.statusText);
+        if (data.refused) toast("The fix tried to reword too much, so your version is kept.");
+        else if (!data.changed && data.text === text) toast("No typos found.");
+        else {
+          ta.value = data.text;
+          answers[s.id] = data.text;
+          save();
+          live(s);
+          progress();
+          toast(data.changed ? `Fixed ${data.changed} word${data.changed === 1 ? "" : "s"}.` : "Fixed capitalization and punctuation.");
+        }
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Fix typos";
+      }
+    });
+    live(s);
+  }
+  progress();
+
+  const assemble = () => {
+    const parts = plan.title ? [plan.title] : [];
+    for (const s of sections) {
+      if (s.heading) parts.push(s.heading);
+      parts.push((answers[s.id] ?? "").trim() || s.text);
+    }
+    return parts.join("\n\n") + "\n";
+  };
+
+  root.addEventListener("click", async (e) => {
+    const act = e.target.closest("[data-act]")?.dataset.act;
+    if (act === "regen") {
+      if (confirm("Write new questions for this article? Your answers are kept.")) runInterview({ regenerate: true });
+    } else if (act === "assemble") {
+      const text = assemble();
+      const mine = sections.filter((s) => (answers[s.id] ?? "").trim()).length;
+      const slot = q(".iv-result");
+      slot.innerHTML = `<div class="section-title">Your article <span class="meta">${mine} of ${sections.length} sections in your words</span></div>`;
+      const article = document.createElement("div");
+      article.className = "article";
+      article.append(copyButton(() => text), text);
+      slot.append(article);
+      slot.insertAdjacentHTML(
+        "beforeend",
+        `<div class="out-actions" style="margin-top:12px">
+          <button class="primary" data-act="iv-analyze" type="button">Analyze it</button>
+          <button class="secondary" data-act="iv-download" type="button">Download .md</button>
+          <button class="secondary" data-act="iv-editor" type="button" title="Replace the article in the editor with this version">Put in editor</button>
+        </div><div class="iv-analysis"></div>`,
+      );
+      slot.dataset.text = text;
+      slot.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (act === "iv-analyze") {
+      const text = q(".iv-result").dataset.text;
+      const out = q(".iv-analysis");
+      out.innerHTML = `<div class="loading"><div class="spinner"></div>Scoring…</div>`;
+      try {
+        const res = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, judge: options().judge }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? res.statusText);
+        out.innerHTML = scoreCard(data);
+        out.append(analysisBlocks(text, data));
+      } catch (err) {
+        out.innerHTML = `<div class="error-box"><strong>Scoring failed.</strong><br>${esc(err.message)}</div>`;
+      }
+    } else if (act === "iv-download") {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([q(".iv-result").dataset.text], { type: "text/markdown" }));
+      a.download = "article.mine.md";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } else if (act === "iv-editor") {
+      els.input.value = q(".iv-result").dataset.text;
+      store.set("text", els.input.value);
+      updateWordCount();
+      toast("Your version is in the editor. Your interview answers are saved with the original.");
+    }
+  });
+}
+
 // ---------- file drop ----------
 
 async function loadFile(file) {
@@ -853,6 +1122,7 @@ els.target.addEventListener("input", () => {
 for (const el of [els.passes, els.keepFormatting, els.judge, els.voiceNotes]) el.addEventListener("change", saveOptions);
 els.analyzeBtn.addEventListener("click", runAnalyze);
 els.humanizeBtn.addEventListener("click", runHumanize);
+els.interviewBtn.addEventListener("click", () => runInterview());
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !state.busy) {
     e.preventDefault();

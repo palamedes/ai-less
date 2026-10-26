@@ -354,3 +354,36 @@ del { background: var(--del); color: var(--del-ink); text-decoration: line-throu
   .report-pane { padding: 18px 16px 22px; }
   .det { grid-template-columns: 110px 1fr 46px; }
 }
+
+/* ---------- interview ---------- */
+.iv > * + * { margin-top: 22px; }
+.iv-head h3 { margin: 0 0 6px; font-size: 20px; letter-spacing: -0.01em; }
+.iv-head .note { margin: 0 0 12px; max-width: 70ch; }
+.iv-progress { display: flex; align-items: center; gap: 12px; }
+.iv-progress .bar { flex: 1; max-width: 320px; height: 8px; }
+.iv-tools { margin-top: 6px; font-size: 13px; }
+.iv-sections { display: grid; gap: 14px; }
+.iv-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--panel); }
+.iv-card.mine { border-color: color-mix(in srgb, var(--good) 55%, var(--line)); box-shadow: inset 3px 0 0 var(--good); }
+.iv-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.iv-num { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--line-2); color: var(--ink-2); flex: none; }
+.iv-card.mine .iv-num { background: var(--good); color: #fff; }
+.iv-label { font-weight: 650; }
+.iv-ai { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--c); font-variant-numeric: tabular-nums; }
+.iv-point { margin: 0 0 6px; font-size: 14.5px; }
+.iv-q { margin: 0 0 10px; padding-left: 20px; color: var(--ink-2); font-size: 14px; }
+.iv-q li { margin: 3px 0; }
+.iv-text {
+  width: 100%; resize: vertical; min-height: 120px;
+  border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+  font: 16px/1.6 var(--serif); background: var(--panel-2); outline: none;
+}
+.iv-text:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--panel); }
+.iv-foot { display: flex; align-items: center; gap: 12px; margin-top: 6px; font-size: 13px; min-height: 20px; }
+.iv-foot .iv-live { flex: 1; }
+.iv-draft { margin-top: 8px; font-size: 13px; }
+.iv-draft summary { cursor: pointer; color: var(--muted); }
+.iv-draft .article { font-size: 14.5px; padding: 12px 14px; margin-top: 8px; color: var(--ink-2); }
+.iv-draft .note { margin: 6px 0 0; }
+.iv-assemble { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.iv-assemble .primary { flex: none; }

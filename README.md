@@ -1,6 +1,11 @@
 # ai-less
 
-Paste an article and get a score for how AI-generated it reads. The tool highlights the sentences that give it away. One button then rewrites it to read human, keeping what it says, how it flows, and the author's voice.
+Paste an article and get a score for how AI-generated it reads. The tool highlights the sentences that give it away, then offers two ways to make it read human:
+
+- **De-AI it:** one button. Claude rewrites the article, keeping what it says, how it flows, and the author's voice, and strips the obvious machine tells.
+- **Interview:** you rewrite it yourself, section by section. The tool tells you what each section has to cover and asks questions to get you going, and your words replace the AI text exactly as you wrote them.
+
+The strongest detectors (Pangram, GPTZero) catch AI wording however it's rewritten; see [what they catch](#what-pangram-and-gptzero-catch). The interview exists because your own sentences are what those detectors read as human.
 
 It runs locally: a small Node server plus a single-page UI in your browser.
 
@@ -72,6 +77,28 @@ The rewrite streams into the page as it's written. **Intensity** controls how fa
 
 The prompt rules out cheap detector tricks like homoglyphs, invisible characters, and deliberate typos. They make the text worse, and the better detectors already look for them.
 
+## Interview mode
+
+1. The article is split into sections of roughly 150 to 250 words, following its headings.
+2. For each one, Claude writes the point the section has to cover and one or two questions that draw out your own version: something you saw yourself, a real example, a detail you know firsthand, how you'd say it to a friend.
+3. You write each section in your own words, rough is fine. As you type, each section shows how much of your wording is your own (the share of three-word phrases not lifted from the AI draft) and a quick local AI check. The AI draft of each section stays folded away; copying or lightly rewording it brings the AI back.
+4. **Fix typos** corrects spelling, capitalization and punctuation only. If the fix would change more than a few words, it's refused and your version is kept.
+5. **Assemble** builds the article: your sections exactly as written, the AI text for any you left empty, with the share of the article that's yours. Then copy it, download it, analyze it, or put it in the editor.
+
+Your answers are saved in the browser per article, so a reload doesn't lose them.
+
+## What Pangram and GPTZero catch
+
+Tested on a 1,700-word opinion column that a current frontier model wrote, which both detectors scored 100% AI:
+
+| Version | What changed | Result |
+|---|---|---|
+| De-AI it (balanced, 3 passes) | sentences reworked, punchy scaffolding removed, same structure | Pangram 97% |
+| Re-drafted from notes | written fresh from a list of the article's points, without seeing the original; new structure | GPTZero 100% (excerpt) |
+| Re-drafted from notes, "talked through" | same, written as if explaining it to a friend | GPTZero 100% (excerpt) |
+
+Both detectors are trained on paraphrased, "humanized", and prompted-to-sound-human AI text, and they detect that a model chose the words, not any particular style. No prompt or structure change got past them. The local score in ai-less agreed in direction but read lower (59 to 69%), so treat a middling local score on a rewrite as "still AI" to the commercial detectors.
+
 ## Configuration
 
 Everything is optional. See [`.env.example`](.env.example) for all settings:
@@ -88,6 +115,7 @@ server/
   index.ts              HTTP API (Hono): /api/status, /api/analyze, /api/humanize (SSE)
   analyze.ts            runs detectors in parallel, combines scores
   humanize.ts           rewrite → score → revise loop, meaning check
+  interview.ts          interview mode: sections, questions, typo-only proofreading
   prompts.ts            the editing guide and per-pass prompts
   llm.ts                picks the Claude backend, connection status
   backends/

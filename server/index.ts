@@ -12,6 +12,7 @@ import { externalDetectors } from "./detectors/external.ts";
 import { classifiers, warmUp } from "./detectors/local-models.ts";
 import { cachedAnalyze } from "./analyze.ts";
 import { checkFidelity, humanize } from "./humanize.ts";
+import { planInterview, proofread } from "./interview.ts";
 import { llmStatus, probeLlm } from "./llm.ts";
 
 const USAGE = `Usage: ai-less [--port N] [--host ADDR] [--no-browser]
@@ -98,6 +99,40 @@ app.post("/api/analyze", async (c) => {
   await ensureClaude();
   const { text, judge } = parsed.data;
   return c.json(await cachedAnalyze(text, "full", judge && llmStatus.ok, c.req.raw.signal));
+});
+
+// Interview mode: split the article into sections with a point and questions for each.
+app.post("/api/interview", async (c) => {
+  const parsed = z.object({ text: Text }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Bad request" }, 400);
+  const status = await ensureClaude();
+  if (!status.ok) return c.json({ error: status.error ?? "Claude isn't connected." }, 503);
+  try {
+    return c.json(await planInterview(parsed.data.text, c.req.raw.signal));
+  } catch (err) {
+    return c.json({ error: describeClaudeError(err) }, 502);
+  }
+});
+
+// Quick local-only score (style tells + local classifiers, no Claude) for live feedback as you type.
+app.post("/api/score", async (c) => {
+  const parsed = z.object({ text: Text }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Bad request" }, 400);
+  const a = await cachedAnalyze(parsed.data.text, "fast", false, c.req.raw.signal);
+  return c.json({ overall: a.overall, verdict: a.verdict, words: a.words, detectors: a.detectors });
+});
+
+// Typo and punctuation fixes only; refuses (and keeps the original) if the model rewrites.
+app.post("/api/proofread", async (c) => {
+  const parsed = z.object({ text: Text }).safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Bad request" }, 400);
+  const status = await ensureClaude();
+  if (!status.ok) return c.json({ error: status.error ?? "Claude isn't connected." }, 503);
+  try {
+    return c.json(await proofread(parsed.data.text, c.req.raw.signal));
+  } catch (err) {
+    return c.json({ error: describeClaudeError(err) }, 502);
+  }
 });
 
 // Meaning check for any draft on demand (the rewrite loop only checks the best one).
