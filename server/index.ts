@@ -3,7 +3,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { describeClaudeError, PipelineError } from "./claude.ts";
@@ -174,8 +174,13 @@ app.post("/api/humanize", async (c) => {
 
 const publicDir = path.relative(process.cwd(), path.join(ROOT, "public")) || ".";
 const diffBundle = path.relative(process.cwd(), path.join(ROOT, "node_modules/diff/dist/diff.min.js"));
-app.get("/vendor/diff.min.js", serveStatic({ path: diffBundle }));
-app.use("/*", serveStatic({ root: publicDir }));
+// Without a Cache-Control header browsers cache the UI heuristically, and after an update a page
+// can pair the new HTML with an old app.js. no-cache makes every load fetch the current files.
+const revalidate = (_path: string, c: Context) => {
+  c.header("Cache-Control", "no-cache");
+};
+app.get("/vendor/diff.min.js", serveStatic({ path: diffBundle, onFound: revalidate }));
+app.use("/*", serveStatic({ root: publicDir, onFound: revalidate }));
 
 function openBrowser(url: string) {
   const [cmd, ...args] =
