@@ -173,13 +173,20 @@ app.post("/api/humanize", async (c) => {
 });
 
 const publicDir = path.relative(process.cwd(), path.join(ROOT, "public")) || ".";
-const diffBundle = path.relative(process.cwd(), path.join(ROOT, "node_modules/diff/dist/diff.min.js"));
+// Browser builds of npm dependencies, served straight from node_modules.
+const vendor: Record<string, string> = {
+  "diff.min.js": "diff/dist/diff.min.js",
+  "easymde.min.js": "easymde/dist/easymde.min.js",
+  "easymde.min.css": "easymde/dist/easymde.min.css",
+};
 // Without a Cache-Control header browsers cache the UI heuristically, and after an update a page
 // can pair the new HTML with an old app.js. no-cache makes every load fetch the current files.
 const revalidate = (_path: string, c: Context) => {
   c.header("Cache-Control", "no-cache");
 };
-app.get("/vendor/diff.min.js", serveStatic({ path: diffBundle, onFound: revalidate }));
+for (const [name, file] of Object.entries(vendor)) {
+  app.get(`/vendor/${name}`, serveStatic({ path: path.relative(process.cwd(), path.join(ROOT, "node_modules", file)), onFound: revalidate }));
+}
 app.use("/*", serveStatic({ root: publicDir, onFound: revalidate }));
 
 function openBrowser(url: string) {

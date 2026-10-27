@@ -23,6 +23,9 @@
   --ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --serif: "Iowan Old Style", "Charter", "Source Serif 4", "Source Serif Pro", ui-serif, Georgia, Cambria, serif;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  /* Article text: Verdana, or the near-identical Bitstream Vera / DejaVu Sans on Linux. */
+  --read: Verdana, "Bitstream Vera Sans", "DejaVu Sans", Geneva, Tahoma, sans-serif;
+  --dot: color-mix(in srgb, var(--muted) 75%, transparent);
   color-scheme: light;
 }
 
@@ -80,6 +83,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .logo { font-weight: 800; font-size: 22px; letter-spacing: -0.03em; }
 .logo b { color: rgb(var(--hot)); font-weight: 800; }
 .tagline { color: var(--muted); font-size: 14px; }
+.topbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .status { display: flex; gap: 8px; flex-wrap: wrap; }
 .pill {
   display: inline-flex; align-items: center; gap: 7px;
@@ -248,7 +252,7 @@ kbd { font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line)
 .legend .ramp { width: 90px; height: 8px; border-radius: 99px; background: linear-gradient(90deg, transparent, rgb(var(--heat-rgb) / 0.5)); border: 1px solid var(--line); }
 
 .article {
-  font: 16.5px/1.75 var(--serif);
+  font: 15px/1.75 var(--read);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border: 1px solid var(--line);
@@ -328,6 +332,7 @@ button.step { font: inherit; font-size: 13px; }
 }
 .copy-btn:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 30%, var(--line)); }
 .copy-btn.done { color: var(--good); border-color: var(--good); }
+.copy-btn.edit-btn { margin-right: -4px; }
 .out-actions button { flex: 0 0 auto; }
 
 ins { background: var(--ins); color: var(--ins-ink); text-decoration: none; border-radius: 3px; }
@@ -383,7 +388,98 @@ del { background: var(--del); color: var(--del-ink); text-decoration: line-throu
 .iv-foot .iv-live { flex: 1; }
 .iv-draft { margin-top: 8px; font-size: 13px; }
 .iv-draft summary { cursor: pointer; color: var(--muted); }
-.iv-draft .article { font-size: 14.5px; padding: 12px 14px; margin-top: 8px; color: var(--ink-2); }
+.iv-draft .article { font-size: 13.5px; padding: 12px 14px; margin-top: 8px; color: var(--ink-2); }
 .iv-draft .note { margin: 6px 0 0; }
 .iv-assemble { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .iv-assemble .primary { flex: none; }
+
+/* ---------- spaces ---------- */
+.text-tools { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+.ws-ok { color: var(--muted); }
+.ws-alert { color: var(--bad); font-weight: 600; }
+/* A dot in the middle of each normal space; the space itself stays a space, so copying is unchanged. */
+.show-spaces .sp, .cm-space { background: radial-gradient(circle at 50% 55%, var(--dot) 0 1.3px, transparent 1.8px); }
+.cm-space.ed-heat { background: radial-gradient(circle at 50% 55%, var(--dot) 0 1.3px, transparent 1.8px), rgb(var(--heat-rgb) / var(--heat, 0)); }
+/* Anything that isn't a normal space: tinted, with its name next to it (not part of the copied text). */
+.ws-odd { background: rgb(var(--heat-rgb) / 0.22); border-radius: 2px; }
+.ws-odd::after {
+  content: attr(data-label);
+  font: 700 9.5px/1 var(--ui); letter-spacing: 0.02em; color: #fff; background: rgb(var(--heat-rgb));
+  border-radius: 3px; padding: 2px 3px; margin: 0 1px; vertical-align: 0.15em; white-space: nowrap;
+}
+.text-tools .ws-odd::after { margin-right: 4px; }
+
+/* ---------- editor ---------- */
+.editor-view { flex: 1; width: 100%; max-width: 1100px; margin: 0 auto; padding: 18px 24px 40px; display: flex; flex-direction: column; gap: 14px; }
+.editor-view:has(.sided--no-fullscreen) { max-width: 1600px; }
+.ed-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ed-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1; }
+.ed-title h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 650; }
+.ed-title .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ed-actions button { flex: none; }
+.ed-score { padding: 22px 24px 28px; display: block; }
+.ed-score > * + * { margin-top: 22px; }
+
+.ed-body .editor-toolbar {
+  background: var(--panel); border-color: var(--line); border-radius: 12px 12px 0 0;
+  padding: 6px 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+}
+.ed-body .editor-toolbar:not(.fullscreen) { position: sticky; top: 0; z-index: 3; }
+.ed-body .editor-toolbar.fullscreen { border-radius: 0; }
+.ed-body .editor-toolbar.fullscreen::before, .ed-body .editor-toolbar.fullscreen::after { display: none; }
+.ed-body .editor-toolbar button {
+  color: var(--ink-2); height: 32px; min-width: 32px; padding: 0 7px; border-radius: 7px;
+  display: inline-grid; place-items: center;
+}
+.ed-body .editor-toolbar button:hover { background: var(--panel-2); border-color: var(--line); color: var(--ink); }
+.ed-body .editor-toolbar button.active, .ed-body .editor-toolbar button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--ink);
+}
+.ed-body .editor-toolbar i.separator { border-left-color: var(--line); border-right: 0; margin: 0 5px; height: 20px; }
+.tb-text { font: 700 13px/1 var(--ui); }
+
+.ed-body .EasyMDEContainer .CodeMirror {
+  font: 15px/1.75 var(--read); color: var(--ink); background: var(--panel);
+  border-color: var(--line); border-radius: 0 0 12px 12px; padding: 14px 18px;
+}
+.ed-body .EasyMDEContainer .CodeMirror-fullscreen { background: var(--panel); border-radius: 0; }
+.ed-body .CodeMirror-cursor { border-left-color: var(--ink); }
+.ed-body .CodeMirror-selected, .ed-body .CodeMirror-focused .CodeMirror-selected { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+.ed-body .CodeMirror-placeholder { color: var(--muted); }
+.ed-body .cm-s-easymde .cm-header-1 { font-size: 1.7em; line-height: 1.3; }
+.ed-body .cm-s-easymde .cm-header-2 { font-size: 1.4em; line-height: 1.35; }
+.ed-body .cm-s-easymde .cm-header-3 { font-size: 1.2em; }
+.ed-body .cm-s-easymde .cm-header-4, .ed-body .cm-s-easymde .cm-header-5, .ed-body .cm-s-easymde .cm-header-6 { font-size: 1.05em; }
+.ed-body .cm-s-easymde .cm-formatting { color: var(--muted); }
+.ed-body .cm-s-easymde .cm-link { color: var(--accent); }
+.ed-body .cm-s-easymde .cm-url { color: var(--muted); }
+.ed-body .cm-s-easymde .cm-quote { color: var(--ink-2); }
+.ed-body .cm-s-easymde .cm-comment { background: var(--line-2); }
+.ed-body .cm-s-easymde .cm-hr { color: var(--muted); }
+.ed-body .cm-tab { background: rgb(var(--heat-rgb) / 0.22); border-radius: 2px; }
+.ed-heat { background: rgb(var(--heat-rgb) / var(--heat, 0)); border-radius: 3px; }
+.ed-heat.hot { box-shadow: inset 0 -2px 0 rgb(var(--heat-rgb) / 0.6); }
+.ed-body .editor-statusbar { color: var(--muted); padding: 6px 4px 0; }
+
+.ed-body .editor-preview, .ed-body .editor-preview-side {
+  background: var(--panel); color: var(--ink); border-color: var(--line);
+  font: 15px/1.75 var(--read); padding: 18px 26px;
+}
+.ed-body .editor-preview-full { border-radius: 0 0 12px 12px; }
+.md-preview h1, .md-preview h2, .md-preview h3 { line-height: 1.3; letter-spacing: -0.01em; margin: 1.3em 0 0.5em; }
+.md-preview h1:first-child, .md-preview h2:first-child, .md-preview h3:first-child { margin-top: 0.2em; }
+.md-preview p { margin: 0 0 1em; }
+.md-preview a { color: var(--accent); }
+.md-preview blockquote { margin: 0 0 1em; padding: 2px 16px; border-left: 3px solid var(--line); color: var(--ink-2); }
+.md-preview code { font: 0.9em var(--mono); background: var(--line-2); padding: 1px 4px; border-radius: 4px; }
+.ed-body .md-preview pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow: auto; }
+.md-preview pre code { background: none; padding: 0; }
+.md-preview hr { border: 0; border-top: 1px solid var(--line); margin: 1.6em 0; }
+.md-preview img { max-width: 100%; }
+.ed-body .md-preview table td, .ed-body .md-preview table th { border-color: var(--line); padding: 5px 10px; }
+
+@media (max-width: 980px) {
+  .editor-view { padding: 14px 16px 28px; }
+  .ed-score { padding: 18px 16px 22px; }
+}

@@ -87,6 +87,20 @@ The prompt rules out cheap detector tricks like homoglyphs, invisible characters
 
 Your answers are saved in the browser per article, so a reload doesn't lose them.
 
+## Editing a draft
+
+**Edit** opens any version from a run, or your assembled interview draft, in a Markdown editor. It has a toolbar for bold, italic, strikethrough, headings, quotes, lists, links, images, tables, code and dividers, plus preview, side-by-side preview and full screen.
+
+- **Check score** (Ctrl+Enter) scores the text as it stands and shades the sentences that read as AI right in the editor. A sentence's shading clears once you edit inside it, since its score no longer applies.
+- The editor holds one document, saved in the browser as you type. The **Editor** button at the top of the page brings it back after you leave it or reload.
+- **Use as input** sends the text to the Article box to analyze it or run another round. **Revert** goes back to the version you opened.
+
+## Spaces
+
+The text tab of a run has a **Show spaces** box that draws a dot in every normal space. Any other character that looks like a space, or like nothing, is always flagged with its name and counted above the text. That covers no-break and narrow no-break spaces, em, en and thin spaces, zero-width characters, direction marks, tabs, byte-order marks and invisible tag characters.
+
+**Open a cleaned-up copy in the editor** replaces them with normal spaces or removes the invisible ones. The editor flags them too, and the same clean-up is on its toolbar.
+
 ## What Pangram and GPTZero catch
 
 Tested on a 1,700-word opinion column that a current frontier model wrote, which both detectors scored 100% AI:

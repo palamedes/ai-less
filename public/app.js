@@ -19,6 +19,12 @@ const els = {
   humanizeBtn: $("#humanizeBtn"),
   interviewBtn: $("#interviewBtn"),
   report: $("#report"),
+  layout: $("main.layout"),
+  editorBtn: $("#editorBtn"),
+  editorView: $("#editorView"),
+  edLabel: $("#edLabel"),
+  edText: $("#edText"),
+  edScore: $("#edScore"),
   tip: $("#tip"),
   toast: $("#toast"),
 };
@@ -651,6 +657,122 @@ function copyButton(getText) {
   return btn;
 }
 
+const ICON_EDIT = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`;
+
+function editButton(onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "copy-btn edit-btn";
+  btn.title = "Open in the editor";
+  btn.setAttribute("aria-label", "Open in the editor");
+  btn.innerHTML = ICON_EDIT;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+// ---------- spaces ----------
+// Characters that render as a space, or as nothing at all, but aren't U+0020. Word processors
+// and copy-paste leave some of them; some chat apps have been reported to leave them in output.
+const ODD_SPACE = /[\t\r\v\f\u00a0\u00ad\u061c\u1680\u180e\u2000-\u200f\u2028-\u202f\u205f-\u2064\u2066-\u2069\u3000\ufeff\u{e0000}-\u{e007f}]/gu;
+const ODD_NAMES = {
+  "\t": ["TAB", "Tab"], "\r": ["CR", "Carriage return"], "\v": ["VT", "Vertical tab"], "\f": ["FF", "Form feed"],
+  "\u00a0": ["NBSP", "No-break space"], "\u00ad": ["SHY", "Soft hyphen"], "\u061c": ["ALM", "Arabic letter mark"],
+  "\u1680": ["OSM", "Ogham space mark"], "\u180e": ["MVS", "Mongolian vowel separator"],
+  "\u2000": ["NQSP", "En quad"], "\u2001": ["MQSP", "Em quad"], "\u2002": ["ENSP", "En space"], "\u2003": ["EMSP", "Em space"],
+  "\u2004": ["3/MSP", "Three-per-em space"], "\u2005": ["4/MSP", "Four-per-em space"], "\u2006": ["6/MSP", "Six-per-em space"],
+  "\u2007": ["FSP", "Figure space"], "\u2008": ["PSP", "Punctuation space"], "\u2009": ["THSP", "Thin space"], "\u200a": ["HSP", "Hair space"],
+  "\u200b": ["ZWSP", "Zero-width space"], "\u200c": ["ZWNJ", "Zero-width non-joiner"], "\u200d": ["ZWJ", "Zero-width joiner (also used inside some emoji)"],
+  "\u200e": ["LRM", "Left-to-right mark"], "\u200f": ["RLM", "Right-to-left mark"],
+  "\u2028": ["LSEP", "Line separator"], "\u2029": ["PSEP", "Paragraph separator"],
+  "\u202a": ["LRE", "Left-to-right embedding"], "\u202b": ["RLE", "Right-to-left embedding"], "\u202c": ["PDF", "Pop directional formatting"],
+  "\u202d": ["LRO", "Left-to-right override"], "\u202e": ["RLO", "Right-to-left override"], "\u202f": ["NNBSP", "Narrow no-break space"],
+  "\u205f": ["MMSP", "Medium mathematical space"], "\u2060": ["WJ", "Word joiner"],
+  "\u2066": ["LRI", "Left-to-right isolate"], "\u2067": ["RLI", "Right-to-left isolate"], "\u2068": ["FSI", "First strong isolate"], "\u2069": ["PDI", "Pop directional isolate"],
+  "\u3000": ["IDSP", "Ideographic space"], "\ufeff": ["BOM", "Zero-width no-break space (byte order mark)"],
+};
+
+function oddSpace(ch) {
+  const cp = ch.codePointAt(0);
+  const code = `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+  const [label, name] = ODD_NAMES[ch] ?? (cp >= 0xe0000 ? ["TAG", "Invisible tag character"] : [code, "Invisible math operator"]);
+  return { label, name, code };
+}
+
+// What to put in place of each one: a normal space for the ones with width, a line break for
+// the line-like ones, nothing for the invisible ones.
+function cleanSpaces(text) {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(ODD_SPACE, (ch) =>
+      /[\t\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/.test(ch) ? " " : /[\v\f\u2028]/.test(ch) ? "\n" : ch === "\u2029" ? "\n\n" : "",
+    );
+}
+
+function oddSpaceCounts(text) {
+  const counts = new Map();
+  for (const [ch] of text.matchAll(ODD_SPACE)) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+  return [...counts].map(([ch, count]) => ({ ...oddSpace(ch), count }));
+}
+
+function oddSpaceMark(ch) {
+  const o = oddSpace(ch);
+  const el = document.createElement("span");
+  el.className = "ws-odd";
+  el.dataset.label = o.label;
+  el.title = `${o.name} (${o.code}), not a normal space`;
+  return el;
+}
+
+// The text with every normal space in its own span, so .show-spaces can dot them, and every
+// other space-like character flagged with a label.
+function spacedText(text) {
+  const frag = document.createDocumentFragment();
+  const re = new RegExp(` |${ODD_SPACE.source}`, "gu");
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    if (m.index > last) frag.append(text.slice(last, m.index));
+    if (m[0] === " ") frag.append(Object.assign(document.createElement("span"), { className: "sp", textContent: " " }));
+    else {
+      const mark = oddSpaceMark(m[0]);
+      mark.textContent = m[0];
+      frag.append(mark);
+    }
+    last = m.index + m[0].length;
+  }
+  frag.append(text.slice(last));
+  return frag;
+}
+
+// One version's text with a "Show spaces" switch and a warning about anything that isn't a
+// normal space. onEdit(text, note) opens it in the editor; the note says what changed.
+function textPanel(text, onEdit) {
+  const wrap = document.createElement("div");
+  const odd = oddSpaceCounts(text);
+  const total = odd.reduce((a, o) => a + o.count, 0);
+  const shown = store.get("showSpaces", false);
+  wrap.innerHTML = `<div class="text-tools">
+      <label class="check"><input type="checkbox" class="show-spaces-box"${shown ? " checked" : ""}> Show spaces</label>
+      ${
+        total
+          ? `<span class="ws-alert">${total} character${total === 1 ? " isn't a normal space" : "s aren't normal spaces"}: ${odd
+              .map((o) => `<span class="ws-odd" data-label="${esc(o.label)}" title="${esc(`${o.name} (${o.code})`)}"></span>${esc(o.name.replace(/ \(.*/, "").toLowerCase())} ×${o.count}`)
+              .join(", ")}</span> <button class="linkish" data-act="clean" type="button">Open a cleaned-up copy in the editor</button>`
+          : `<span class="ws-ok">Only normal spaces and line breaks</span>`
+      }
+    </div>`;
+  const article = document.createElement("div");
+  article.className = "article";
+  article.classList.toggle("show-spaces", shown);
+  article.append(copyButton(() => text), editButton(() => onEdit(text)), spacedText(text));
+  wrap.append(article);
+  wrap.querySelector(".show-spaces-box").addEventListener("change", (e) => {
+    article.classList.toggle("show-spaces", e.target.checked);
+    store.set("showSpaces", e.target.checked);
+  });
+  wrap.querySelector('[data-act="clean"]')?.addEventListener("click", () => onEdit(cleanSpaces(text), "spaces cleaned up"));
+  return wrap;
+}
+
 function renderResult(original, r, drafts = []) {
   const { before } = r;
   // Every version from the run; the best draft carries the final (full) analysis.
@@ -677,10 +799,13 @@ function renderResult(original, r, drafts = []) {
     <div class="out-actions">
       <button class="primary" data-act="copy" type="button">Copy</button>
       <button class="secondary" data-act="download" type="button">Download .md</button>
-      <button class="secondary" data-act="use" type="button" title="Put this version in the editor so you can tweak it or run another round">Edit / run again</button>
+      <button class="secondary" data-act="edit" type="button" title="Keep working on this version in the Markdown editor">Edit</button>
+      <button class="secondary" data-act="use" type="button" title="Put this version in the Article box to analyze it or run another round">Use as input</button>
     </div>`;
 
   const q = (selector) => els.report.querySelector(selector);
+  const label = () => (selected === 0 ? "Original" : `Pass ${selected}`);
+  const edit = (text, note) => openEditor(text, note ? `${label()}, ${note}` : label());
   q(".versions").innerHTML = versions
     .map(
       (v) => `<button type="button" class="step done clickable${v.pass === r.bestPass && v.pass > 0 ? " best" : ""}" data-pass="${v.pass}" title="${esc(
@@ -690,12 +815,7 @@ function renderResult(original, r, drafts = []) {
     .join("");
 
   const tabs = {
-    text() {
-      const el = document.createElement("div");
-      el.className = "article";
-      el.append(copyButton(() => sel().text), sel().text);
-      return el;
-    },
+    text: () => textPanel(sel().text, edit),
     diff() {
       if (selected === 0) return Object.assign(document.createElement("p"), { className: "note", textContent: "This is the original, so there are no changes to show." });
       return diffView(original, sel().text);
@@ -779,6 +899,8 @@ function renderResult(original, r, drafts = []) {
       a.download = selected === 0 ? "article.md" : `article.ai-less.pass${selected}.md`;
       a.click();
       URL.revokeObjectURL(a.href);
+    } else if (act === "edit") {
+      edit(v.text);
     } else if (act === "use") {
       els.input.value = v.text;
       store.set("text", v.text);
@@ -1022,7 +1144,8 @@ function renderInterview(original, plan, key) {
         `<div class="out-actions" style="margin-top:12px">
           <button class="primary" data-act="iv-analyze" type="button">Analyze it</button>
           <button class="secondary" data-act="iv-download" type="button">Download .md</button>
-          <button class="secondary" data-act="iv-editor" type="button" title="Replace the article in the editor with this version">Put in editor</button>
+          <button class="secondary" data-act="iv-edit" type="button" title="Keep working on it in the Markdown editor">Edit</button>
+          <button class="secondary" data-act="iv-editor" type="button" title="Put this version in the Article box">Use as input</button>
         </div><div class="iv-analysis"></div>`,
       );
       slot.dataset.text = text;
@@ -1046,14 +1169,315 @@ function renderInterview(original, plan, key) {
       a.download = "article.mine.md";
       a.click();
       URL.revokeObjectURL(a.href);
+    } else if (act === "iv-edit") {
+      openEditor(q(".iv-result").dataset.text, "Your interview draft");
     } else if (act === "iv-editor") {
       els.input.value = q(".iv-result").dataset.text;
       store.set("text", els.input.value);
       updateWordCount();
-      toast("Your version is in the editor. Your interview answers are saved with the original.");
+      toast("Your version is in the Article box. Your interview answers are saved with the original.");
     }
   });
 }
+
+// ---------- editor ----------
+// A Markdown editor for finishing a draft by hand. It holds one document, saved in the browser
+// as you type, so a reload doesn't lose it; the topbar's Editor button brings it back.
+
+const editor = { mde: null, base: null, heat: [], scored: null, scrollY: 0 };
+
+const icon = (paths) =>
+  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const glyph = (text, style = "") => `<span class="tb-text" style="${style}">${text}</span>`;
+
+function editorToolbar() {
+  const E = window.EasyMDE;
+  const b = (name, action, title, markup, extra = {}) => ({ name, action, title, icon: markup, ...extra });
+  return [
+    b("bold", E.toggleBold, "Bold", glyph("B", "font-weight:800")),
+    b("italic", E.toggleItalic, "Italic", glyph("I", "font-style:italic;font-family:Georgia,serif")),
+    b("strikethrough", E.toggleStrikethrough, "Strikethrough", glyph("S", "text-decoration:line-through")),
+    "|",
+    b("heading-1", E.toggleHeading1, "Heading 1", glyph("H1")),
+    b("heading-2", E.toggleHeading2, "Heading 2", glyph("H2")),
+    b("heading-3", E.toggleHeading3, "Heading 3", glyph("H3")),
+    "|",
+    b("quote", E.toggleBlockquote, "Quote", icon('<path d="M17 6H3"/><path d="M21 12H8"/><path d="M21 18H8"/><path d="M3 12v6"/>')),
+    b("unordered-list", E.toggleUnorderedList, "Bulleted list", icon('<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>')),
+    b("ordered-list", E.toggleOrderedList, "Numbered list", icon('<path d="M10 12h11"/><path d="M10 18h11"/><path d="M10 6h11"/><path d="M4 10h2"/><path d="M4 6h1v4"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>')),
+    "|",
+    b("link", E.drawLink, "Link", icon('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>')),
+    b("image", E.drawImage, "Image", icon('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>')),
+    b("table", E.drawTable, "Table", icon('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M12 3v18"/>')),
+    b("horizontal-rule", E.drawHorizontalRule, "Divider line", icon('<path d="M5 12h14"/>')),
+    b("code", E.toggleCodeBlock, "Code", icon('<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>')),
+    b("clean-block", E.cleanBlock, "Clear formatting", icon('<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>')),
+    "|",
+    b("undo", E.undo, "Undo", icon('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>'), { noDisable: true }),
+    b("redo", E.redo, "Redo", icon('<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>'), { noDisable: true }),
+    "|",
+    b("show-spaces", () => setEditorSpaces(!store.get("showSpaces", false)), "Show spaces", glyph("·␣")),
+    b("clean-spaces", cleanEditorSpaces, "Replace characters that aren't normal spaces", glyph("␣✓")),
+    "|",
+    b("preview", E.togglePreview, "Preview", icon('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>'), { noDisable: true }),
+    b("side-by-side", E.toggleSideBySide, "Side-by-side preview", icon('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/>'), { noDisable: true, noMobile: true }),
+    b("fullscreen", E.toggleFullScreen, "Full screen", icon('<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>'), { noDisable: true, noMobile: true }),
+    b("guide", "https://www.markdownguide.org/basic-syntax/", "Markdown guide", icon('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'), { noDisable: true }),
+  ];
+}
+
+// The preview renders the article's Markdown, which can carry raw HTML.
+function sanitizeHtml(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  for (const el of doc.querySelectorAll("script, style, iframe, object, embed, form, link, meta, base")) el.remove();
+  for (const el of doc.body.querySelectorAll("*")) {
+    for (const { name, value } of [...el.attributes]) {
+      if (/^on/i.test(name) || (/^(href|src|action|formaction|xlink:href)$/i.test(name) && /^\s*javascript:/i.test(value))) el.removeAttribute(name);
+    }
+    if (el.tagName === "A") Object.assign(el, { target: "_blank", rel: "noopener noreferrer" });
+  }
+  return doc.body.innerHTML;
+}
+
+// Shows each normal space as a dot. flattenSpans is off so that runs of spaces get a dot each.
+const SPACE_OVERLAY = {
+  token(stream) {
+    if (stream.eat(" ")) return "space";
+    stream.eatWhile(/[^ ]/);
+    return null;
+  },
+};
+
+function setEditorSpaces(on) {
+  store.set("showSpaces", on);
+  const cm = editor.mde.codemirror;
+  cm.removeOverlay(SPACE_OVERLAY);
+  if (on) cm.addOverlay(SPACE_OVERLAY);
+  // EasyMDE resets the "active" class on custom buttons whenever the cursor moves.
+  editor.mde.toolbarElements["show-spaces"]?.setAttribute("aria-pressed", String(on));
+}
+
+function cleanEditorSpaces() {
+  const cm = editor.mde.codemirror;
+  const matches = [...cm.getValue().matchAll(ODD_SPACE)];
+  if (!matches.length) return toast("Every space is already a normal space.");
+  // Back to front, so earlier offsets stay valid; one undo step.
+  cm.operation(() => {
+    for (const m of matches.reverse()) {
+      cm.replaceRange(cleanSpaces(m[0]), cm.posFromIndex(m.index), cm.posFromIndex(m.index + m[0].length), "+clean");
+    }
+  });
+  toast(`Replaced ${matches.length} character${matches.length === 1 ? "" : "s"} with normal spaces or nothing.`);
+}
+
+function docTitle(text) {
+  const line = (text.split("\n").find((l) => l.trim()) ?? "").replace(/^#+\s*/, "").replace(/[*_`]/g, "").trim();
+  return line.length > 60 ? `${line.slice(0, 57)}…` : line;
+}
+
+function updateEditorLabel() {
+  const doc = store.get("editor", null);
+  if (!doc) return;
+  const title = docTitle(doc.text);
+  els.edLabel.textContent = `${doc.label} · ${doc.text === doc.base ? "unchanged" : "edited, saved in this browser"}${title ? ` · ${title}` : ""}`;
+}
+
+function saveEditor() {
+  const doc = store.get("editor", null);
+  if (!editor.mde || !doc) return;
+  doc.text = editor.mde.value();
+  store.set("editor", doc);
+  updateEditorLabel();
+}
+
+function clearHeat() {
+  for (const m of editor.heat) m.clear();
+  editor.heat = [];
+}
+
+// A score's highlights, drawn on the text. CodeMirror moves them with the text as you type, and
+// a sentence's highlight goes away once you edit inside it, since its score no longer applies.
+function paintHeat(analysis) {
+  const cm = editor.mde.codemirror;
+  clearHeat();
+  for (const s of analysis.sentences) {
+    if (s.score === null || s.kind === "heading" || heat(s.score) <= 0) continue;
+    editor.heat.push(
+      cm.markText(cm.posFromIndex(s.start), cm.posFromIndex(s.end), {
+        className: s.score >= 0.6 ? "ed-heat hot" : "ed-heat",
+        css: `--heat:${heat(s.score).toFixed(3)}`,
+        title: `${pct(s.score * 100)} AI-like${s.notes.length ? `: ${s.notes.join("; ")}` : ""}`,
+      }),
+    );
+  }
+}
+
+function clearHeatAt(change) {
+  if (!editor.heat.length) return;
+  const cm = editor.mde.codemirror;
+  const a = cm.indexFromPos(change.from);
+  const b = a + change.text.join("\n").length;
+  editor.heat = editor.heat.filter((m) => {
+    const r = m.find();
+    if (!r) return false;
+    const from = cm.indexFromPos(r.from);
+    const to = cm.indexFromPos(r.to);
+    if (a === b ? from <= a && a < to : from < b && to > a) {
+      m.clear();
+      return false;
+    }
+    return true;
+  });
+}
+
+function staleNote() {
+  const slot = els.edScore.querySelector(".ed-stale");
+  if (slot) slot.textContent = editor.mde.value() === editor.scored ? "" : "You've edited since this score";
+}
+
+function createEditor() {
+  const mde = new window.EasyMDE({
+    element: els.edText,
+    toolbar: editorToolbar(),
+    toolbarButtonClassPrefix: "mde",
+    autoDownloadFontAwesome: false,
+    spellChecker: false,
+    nativeSpellcheck: true,
+    inputStyle: "contenteditable",
+    sideBySideFullscreen: false,
+    minHeight: "460px",
+    status: ["words", "lines"],
+    unorderedListStyle: "-",
+    previewClass: ["editor-preview", "md-preview"],
+    renderingConfig: { sanitizerFunction: sanitizeHtml },
+    placeholder: "Write here…",
+  });
+  editor.mde = mde;
+  const cm = mde.codemirror;
+  cm.setOption("flattenSpans", false);
+  // CodeMirror draws these as placeholders instead of the character: the same labels as the
+  // Rewritten tab. Tabs it draws itself (styled in CSS).
+  cm.setOption("specialChars", /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u00a0\u00ad\u061c\u1680\u180e\u2000-\u200f\u2028-\u202f\u205f-\u2064\u2066-\u2069\u3000\ufeff\ufff9-\ufffc]/);
+  cm.setOption("specialCharPlaceholder", oddSpaceMark);
+  let saveTimer;
+  cm.on("change", (_cm, change) => {
+    clearHeatAt(change);
+    staleNote();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveEditor, 300);
+  });
+  window.addEventListener("pagehide", saveEditor);
+  setEditorSpaces(store.get("showSpaces", false));
+}
+
+function showEditor() {
+  const doc = store.get("editor", null);
+  if (!doc) return;
+  if (!window.EasyMDE) return toast("The editor didn't load. Reload the page and try again.");
+  editor.scrollY = window.scrollY;
+  els.layout.hidden = true;
+  els.editorView.hidden = false;
+  els.editorBtn.hidden = true;
+  if (!editor.mde) createEditor();
+  const cm = editor.mde.codemirror;
+  if (editor.base !== doc.base || editor.mde.value() !== doc.text) {
+    // A different document: start fresh, without the last one's undo history or score.
+    editor.mde.value(doc.text);
+    cm.clearHistory();
+    editor.base = doc.base;
+    editor.scored = null;
+    clearHeat();
+    els.edScore.hidden = true;
+    els.edScore.replaceChildren();
+  }
+  updateEditorLabel();
+  window.scrollTo(0, 0);
+  cm.refresh();
+  cm.focus();
+}
+
+// Opening a text the editor already holds picks up where you left off. Opening a different one
+// replaces it, after asking if that would throw away edits.
+function openEditor(text, label) {
+  const doc = store.get("editor", null);
+  const replace = !doc || (doc.base !== text && doc.text !== text);
+  if (replace && doc && doc.text !== doc.base) {
+    const ok = confirm(`The editor has your edits to ${doc.label}.\n\nOK: replace them with ${label}.\nCancel: keep your edits and open them.`);
+    if (!ok) return showEditor();
+  }
+  if (replace) store.set("editor", { text, base: text, label });
+  showEditor();
+}
+
+function closeEditor() {
+  saveEditor();
+  if (editor.mde?.isFullscreenActive()) editor.mde.toggleFullScreen();
+  els.editorView.hidden = true;
+  els.layout.hidden = false;
+  els.editorBtn.hidden = false;
+  window.scrollTo(0, editor.scrollY);
+}
+
+async function scoreEditor() {
+  const cm = editor.mde.codemirror;
+  const text = cm.getValue();
+  if (!text.trim()) return toast("Write something first.");
+  const btn = els.editorView.querySelector('[data-act="score"]');
+  const gen = cm.changeGeneration();
+  btn.disabled = true;
+  btn.textContent = "Scoring…";
+  els.edScore.hidden = false;
+  els.edScore.innerHTML = `<div class="loading"><div class="spinner"></div>${options().judge && state.status?.claude.ok ? "Scoring… (Claude's read takes a few seconds)" : "Scoring…"}</div>`;
+  try {
+    const res = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, judge: options().judge }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? res.statusText);
+    editor.scored = text;
+    els.edScore.innerHTML = `<div class="section-title">Score <span class="meta ed-stale"></span></div>${scoreCard(data)}`;
+    els.edScore.append(analysisBlocks(text, data));
+    // The sentence offsets only line up with the text as it was sent.
+    if (cm.isClean(gen)) paintHeat(data);
+    else toast("You edited while it scored, so the highlights are off. Check again to see them.");
+    staleNote();
+  } catch (err) {
+    els.edScore.innerHTML = `<div class="error-box"><strong>Scoring failed.</strong><br>${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Check score";
+  }
+}
+
+els.editorView.querySelector(".ed-head").addEventListener("click", async (e) => {
+  const act = e.target.closest("button[data-act]")?.dataset.act;
+  if (!act || !editor.mde) return;
+  const text = editor.mde.value();
+  const doc = store.get("editor", null);
+  if (act === "back") closeEditor();
+  else if (act === "score") scoreEditor();
+  else if (act === "copy") {
+    if (await copyText(text)) toast("Copied.");
+  } else if (act === "download") {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
+    a.download = "article.edited.md";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } else if (act === "input") {
+    els.input.value = text;
+    store.set("text", text);
+    updateWordCount();
+    closeEditor();
+    toast("It's in the Article box. Analyze it, interview it, or De-AI it from there.");
+  } else if (act === "revert") {
+    if (!doc || text === doc.base) return toast("There are no edits to revert.");
+    if (confirm(`Throw away your edits and go back to ${doc.label} as it was?`)) editor.mde.value(doc.base);
+  }
+});
+els.editorBtn.addEventListener("click", showEditor);
 
 // ---------- file drop ----------
 
@@ -1124,13 +1548,18 @@ els.analyzeBtn.addEventListener("click", runAnalyze);
 els.humanizeBtn.addEventListener("click", runHumanize);
 els.interviewBtn.addEventListener("click", () => runInterview());
 document.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !state.busy) {
+  if (!(e.ctrlKey || e.metaKey) || e.key !== "Enter") return;
+  if (!els.editorView.hidden) {
+    e.preventDefault();
+    if (!els.editorView.querySelector('[data-act="score"]').disabled) scoreEditor();
+  } else if (!state.busy) {
     e.preventDefault();
     runAnalyze();
   }
 });
 
 restore();
+els.editorBtn.hidden = !store.get("editor", null);
 emptyView();
 updateButtons();
 refreshStatus();

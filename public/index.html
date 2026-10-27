@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ai-less</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231d1c1a'/><path d='M9 22 L16 9 L23 22' stroke='%23f6f5f1' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/><path d='M7 16 H25' stroke='%23f0654a' stroke-width='3' stroke-linecap='round'/></svg>">
+  <link rel="stylesheet" href="/vendor/easymde.min.css">
   <link rel="stylesheet" href="styles.css">
   <script src="/vendor/diff.min.js" defer></script>
+  <script src="/vendor/easymde.min.js" defer></script>
   <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -15,7 +17,10 @@
       <span class="logo">ai<b>-less</b></span>
       <span class="tagline">Score it. Rewrite it. Keep the voice.</span>
     </div>
-    <div class="status" id="status" aria-live="polite"></div>
+    <div class="topbar-right">
+      <button class="ghost small" id="editorBtn" type="button" hidden title="Back to the article you were editing">Editor</button>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
   </header>
 
   <div class="banner" id="banner" hidden></div>
@@ -71,6 +76,22 @@
     </section>
 
     <section class="pane report-pane" id="report" aria-live="polite"></section>
+  </main>
+
+  <main class="editor-view" id="editorView" hidden aria-label="Editor">
+    <div class="ed-head">
+      <button class="ghost small" data-act="back" type="button">← Back</button>
+      <div class="ed-title"><h2>Editor</h2><span class="meta" id="edLabel"></span></div>
+      <div class="ed-actions">
+        <button class="secondary small" data-act="score" type="button" title="Score this text (Ctrl+Enter)">Check score</button>
+        <button class="secondary small" data-act="copy" type="button">Copy</button>
+        <button class="secondary small" data-act="download" type="button">Download .md</button>
+        <button class="secondary small" data-act="input" type="button" title="Put this text in the Article box to analyze or rewrite it again">Use as input</button>
+        <button class="ghost small" data-act="revert" type="button" title="Throw away your edits">Revert</button>
+      </div>
+    </div>
+    <div class="ed-body"><textarea id="edText"></textarea></div>
+    <section class="ed-score pane" id="edScore" hidden aria-live="polite"></section>
   </main>
 
   <div class="tip" id="tip" role="tooltip" hidden></div>
